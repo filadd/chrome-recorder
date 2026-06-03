@@ -1,0 +1,125 @@
+{
+  "extension_name": {
+    "message": "Filadd Recorder"
+  },
+  "extension_description": {
+    "message": "Records Google Meet calls and uploads them automatically."
+  },
+  "overlay_recording": {
+    "message": "Recording"
+  },
+  "overlay_uploading": {
+    "message": "Uploading…"
+  },
+  "overlay_finished": {
+    "message": "Recording uploaded"
+  },
+  "overlay_error": {
+    "message": "Recording error"
+  },
+  "overlay_coachmark": {
+    "message": "Click the extension icon (or Ctrl+Shift+S) to start recording."
+  },
+  "overlay_needs_permission": {
+    "message": "Grant microphone permission to start recording."
+  },
+  "popup_status_idle": {
+    "message": "Ready to record"
+  },
+  "popup_status_arming": {
+    "message": "Preparing…"
+  },
+  "popup_status_recording": {
+    "message": "Recording"
+  },
+  "popup_status_stopping": {
+    "message": "Stopping…"
+  },
+  "popup_status_finalizing": {
+    "message": "Finalizing upload…"
+  },
+  "popup_status_finished": {
+    "message": "Recording uploaded"
+  },
+  "popup_status_error": {
+    "message": "Error"
+  },
+  "popup_status_needsPermission": {
+    "message": "Microphone permission missing"
+  },
+  "popup_profile_label": {
+    "message": "Recording profile"
+  },
+  "popup_userid_label": {
+    "message": "Your identifier"
+  },
+  "popup_userid_placeholder": {
+    "message": "e.g. you@email.com"
+  },
+  "popup_grant_mic": {
+    "message": "Grant microphone"
+  },
+  "popup_recover_retry": {
+    "message": "Retry pending upload"
+  },
+  "popup_recover_abort": {
+    "message": "Discard pending upload"
+  },
+  "popup_recovery_notice": {
+    "message": "There is an interrupted recording pending finalization."
+  },
+  "popup_dismiss_error": {
+    "message": "Dismiss"
+  },
+  "profile_orientation_label": {
+    "message": "Orientation sessions"
+  },
+  "profile_orientation_desc": {
+    "message": "Orientation sessions; transcribed automatically."
+  },
+  "profile_private_label": {
+    "message": "Private conversations"
+  },
+  "profile_private_desc": {
+    "message": "Personal recordings."
+  },
+  "profile_project_label": {
+    "message": "Project"
+  },
+  "profile_project_desc": {
+    "message": "Conversations tied to a project."
+  },
+  "field_title": {
+    "message": "Title"
+  },
+  "field_title_ph": {
+    "message": "Optional title"
+  },
+  "field_project": {
+    "message": "Project"
+  },
+  "field_project_ph": {
+    "message": "Project identifier"
+  },
+  "permission_title": {
+    "message": "Microphone permission"
+  },
+  "permission_body": {
+    "message": "Filadd Recorder needs microphone access to include your voice in recordings. This is asked only once."
+  },
+  "permission_grant": {
+    "message": "Allow microphone"
+  },
+  "permission_granted": {
+    "message": "Done! You can close this tab and start recording."
+  },
+  "permission_denied": {
+    "message": "Permission was denied. Enable it from the site settings to record."
+  },
+  "popup_start": {
+    "message": "Start recording"
+  },
+  "popup_stop": {
+    "message": "Stop recording"
+  }
+}

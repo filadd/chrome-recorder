@@ -1,0 +1,125 @@
+{
+  "extension_name": {
+    "message": "Filadd Recorder"
+  },
+  "extension_description": {
+    "message": "Grava chamadas do Google Meet e as envia automaticamente."
+  },
+  "overlay_recording": {
+    "message": "Gravando"
+  },
+  "overlay_uploading": {
+    "message": "Enviando…"
+  },
+  "overlay_finished": {
+    "message": "Gravação enviada"
+  },
+  "overlay_error": {
+    "message": "Erro na gravação"
+  },
+  "overlay_coachmark": {
+    "message": "Clique no ícone da extensão (ou Ctrl+Shift+S) para iniciar a gravação."
+  },
+  "overlay_needs_permission": {
+    "message": "Conceda permissão de microfone para começar a gravar."
+  },
+  "popup_status_idle": {
+    "message": "Pronto para gravar"
+  },
+  "popup_status_arming": {
+    "message": "Preparando…"
+  },
+  "popup_status_recording": {
+    "message": "Gravando"
+  },
+  "popup_status_stopping": {
+    "message": "Parando…"
+  },
+  "popup_status_finalizing": {
+    "message": "Finalizando envio…"
+  },
+  "popup_status_finished": {
+    "message": "Gravação enviada"
+  },
+  "popup_status_error": {
+    "message": "Erro"
+  },
+  "popup_status_needsPermission": {
+    "message": "Falta permissão de microfone"
+  },
+  "popup_profile_label": {
+    "message": "Perfil de gravação"
+  },
+  "popup_userid_label": {
+    "message": "Seu identificador"
+  },
+  "popup_userid_placeholder": {
+    "message": "ex: voce@email.com"
+  },
+  "popup_grant_mic": {
+    "message": "Conceder microfone"
+  },
+  "popup_recover_retry": {
+    "message": "Repetir envio pendente"
+  },
+  "popup_recover_abort": {
+    "message": "Descartar envio pendente"
+  },
+  "popup_recovery_notice": {
+    "message": "Há uma gravação interrompida sem finalizar."
+  },
+  "popup_dismiss_error": {
+    "message": "Dispensar"
+  },
+  "profile_orientation_label": {
+    "message": "Orientações"
+  },
+  "profile_orientation_desc": {
+    "message": "Sessões de orientação; transcritas automaticamente."
+  },
+  "profile_private_label": {
+    "message": "Conversas privadas"
+  },
+  "profile_private_desc": {
+    "message": "Gravações pessoais."
+  },
+  "profile_project_label": {
+    "message": "Projeto"
+  },
+  "profile_project_desc": {
+    "message": "Conversas associadas a um projeto."
+  },
+  "field_title": {
+    "message": "Título"
+  },
+  "field_title_ph": {
+    "message": "Título opcional"
+  },
+  "field_project": {
+    "message": "Projeto"
+  },
+  "field_project_ph": {
+    "message": "Identificador do projeto"
+  },
+  "permission_title": {
+    "message": "Permissão de microfone"
+  },
+  "permission_body": {
+    "message": "O Filadd Recorder precisa de acesso ao microfone para incluir sua voz nas gravações. Isso é pedido apenas uma vez."
+  },
+  "permission_grant": {
+    "message": "Permitir microfone"
+  },
+  "permission_granted": {
+    "message": "Pronto! Você pode fechar esta guia e começar a gravar."
+  },
+  "permission_denied": {
+    "message": "A permissão foi negada. Habilite nas configurações do site para gravar."
+  },
+  "popup_start": {
+    "message": "Iniciar gravação"
+  },
+  "popup_stop": {
+    "message": "Parar gravação"
+  }
+}
