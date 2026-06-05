@@ -135,6 +135,17 @@ const toggleRecording = async (
   return { status: "error" };
 };
 
+const applyMicMute = (actor: RecorderActor, muted: boolean): void => {
+  const state = String(actor.getSnapshot().value);
+
+  if (state === "recording" || state === "stopping") {
+    actor.send({ type: "MIC_MUTE_CHANGED", muted });
+    chrome.runtime
+      .sendMessage({ target: "offscreen", type: "set-mic-muted", muted })
+      .catch(() => undefined);
+  }
+};
+
 const finishSession = async (actor: RecorderActor): Promise<void> => {
   await setRecordingTabId(null);
   await closeOffscreenDocument();
@@ -166,9 +177,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         actor.send({ type: "MIC_GRANTED" });
         return undefined;
 
-      case "capture-started":
-        actor.send({ type: "CAPTURE_STARTED" });
+      case "mic-mute-changed":
+        applyMicMute(actor, message.muted);
         return undefined;
+
+      case "capture-started": {
+        actor.send({ type: "CAPTURE_STARTED" });
+
+        // The user may have been muted in Meet before the recording started;
+        // mute changes are only pushed on transitions, so sync the initial state.
+        const tabId = await getRecordingTabId();
+
+        if (tabId != null) {
+          chrome.tabs
+            .sendMessage(tabId, { target: "content", type: "query-mic-mute" })
+            .then((response) => {
+              const muted = (response as { muted: boolean | null } | undefined)?.muted;
+
+              if (muted != null) {
+                applyMicMute(actor, muted);
+              }
+            })
+            .catch(() => undefined);
+        }
+
+        return undefined;
+      }
 
       case "capture-stopped":
         actor.send({ type: "CAPTURE_STOPPED" });

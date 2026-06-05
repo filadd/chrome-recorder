@@ -10,6 +10,7 @@ import { createUploadManager } from "../upload/upload-manager";
 
 interface ActiveRecording {
   stop: () => void;
+  setMicMuted: (muted: boolean) => void;
 }
 
 let active: ActiveRecording | null = null;
@@ -129,6 +130,11 @@ const setUpRecording = async (streamId: string, session: UploadSession): Promise
         recorder.stop();
       }
     },
+
+    // Mirrors Meet's own mute into the recording; the short ramp avoids clicks.
+    setMicMuted: (muted) => {
+      mixed.micGain.gain.setTargetAtTime(muted ? 0 : 1, mixed.context.currentTime, 0.02);
+    },
   };
 
   // A stop that raced the async setup (user left the call immediately) must not
@@ -144,4 +150,8 @@ const setUpRecording = async (streamId: string, session: UploadSession): Promise
 export const stopRecording = (): void => {
   stopRequested = true;
   active?.stop();
+};
+
+export const setMicMuted = (muted: boolean): void => {
+  active?.setMicMuted(muted);
 };

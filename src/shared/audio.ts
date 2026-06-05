@@ -1,6 +1,7 @@
 export interface MixedCapture {
   stream: MediaStream;
   context: AudioContext;
+  micGain: GainNode;
 }
 
 // Tab audio must be re-routed to the speakers: capturing a tab mutes it for the
@@ -28,5 +29,5 @@ export const buildMixingGraph = async (
     await context.resume();
   }
 
-  return { stream: destination.stream, context };
+  return { stream: destination.stream, context, micGain };
 };

@@ -8,6 +8,7 @@ export interface MachineContext {
   profileId: ProfileId;
   startedAt: number | null;
   partsDone: number;
+  micMuted: boolean;
   error: string | null;
 }
 
@@ -18,6 +19,7 @@ export type MachineEvent =
   | { type: "CAPTURE_STARTED" }
   | { type: "STOP"; reason: StopReason }
   | { type: "CAPTURE_STOPPED" }
+  | { type: "MIC_MUTE_CHANGED"; muted: boolean }
   | { type: "PART_UPLOADED"; partNumber: number }
   | { type: "UPLOAD_FINISHED" }
   | { type: "FAIL"; message: string }
@@ -28,6 +30,7 @@ const initialContext: MachineContext = {
   profileId: "orientation",
   startedAt: null,
   partsDone: 0,
+  micMuted: false,
   error: null,
 };
 
@@ -58,6 +61,7 @@ export const recorderMachine = setup({
             profileId: ({ event }) => event.profileId,
             startedAt: ({ event }) => event.startedAt,
             partsDone: () => 0,
+            micMuted: () => false,
             error: () => null,
           }),
         },
@@ -79,6 +83,9 @@ export const recorderMachine = setup({
     recording: {
       on: {
         STOP: "stopping",
+        MIC_MUTE_CHANGED: {
+          actions: assign({ micMuted: ({ event }) => event.muted }),
+        },
         PART_UPLOADED: {
           actions: assign({ partsDone: ({ event }) => event.partNumber }),
         },
@@ -88,6 +95,9 @@ export const recorderMachine = setup({
     stopping: {
       on: {
         CAPTURE_STOPPED: "finalizing",
+        MIC_MUTE_CHANGED: {
+          actions: assign({ micMuted: ({ event }) => event.muted }),
+        },
         PART_UPLOADED: {
           actions: assign({ partsDone: ({ event }) => event.partNumber }),
         },

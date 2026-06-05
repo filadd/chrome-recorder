@@ -17,6 +17,7 @@ export interface UiSnapshot {
   profileId: ProfileId;
   startedAt: number | null;
   partsDone: number;
+  micMuted: boolean;
   error: string | null;
 }
 
@@ -40,6 +41,7 @@ export const DEFAULT_SNAPSHOT: UiSnapshot = {
   profileId: "orientation",
   startedAt: null,
   partsDone: 0,
+  micMuted: false,
   error: null,
 };
 

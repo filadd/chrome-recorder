@@ -1,5 +1,5 @@
 import { isForTarget, sendMessage } from "../shared/messages";
-import { isRecording, startRecording, stopRecording } from "./recorder";
+import { isRecording, setMicMuted, startRecording, stopRecording } from "./recorder";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!isForTarget(message, "offscreen")) {
@@ -22,6 +22,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     case "stop-capture":
       stopRecording();
+      break;
+
+    case "set-mic-muted":
+      setMicMuted(message.muted);
       break;
 
     case "ping":

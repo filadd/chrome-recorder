@@ -95,7 +95,7 @@ export const mountOverlay = (): void => {
       return;
     }
 
-    const { state, startedAt, error } = snapshot;
+    const { state, startedAt, micMuted, error } = snapshot;
 
     pill.classList.toggle("recording", state === "recording");
     pill.classList.toggle("attention", state === "idle" || state === "needsPermission");
@@ -103,7 +103,7 @@ export const mountOverlay = (): void => {
     dot.classList.toggle("hidden", state !== "recording" && state !== "arming");
 
     if (state === "recording" && startedAt != null) {
-      label.textContent = `${t("overlay_recording")} ${formatElapsed(startedAt)}`;
+      label.textContent = `${t("overlay_recording")} ${formatElapsed(startedAt)}${micMuted ? ` · ${t("overlay_mic_muted")}` : ""}`;
     } else if (state === "arming") {
       label.textContent = t("popup_status_arming");
     } else if (state === "stopping" || state === "finalizing") {

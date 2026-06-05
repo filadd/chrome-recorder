@@ -67,6 +67,32 @@ describe("recorderMachine", () => {
     expect(actor.getSnapshot().value).toBe("idle");
   });
 
+  it("mirrors mic mute while recording and resets it on a new start", () => {
+    const actor = startedActor();
+    actor.send({ type: "CAPTURE_STARTED" });
+
+    actor.send({ type: "MIC_MUTE_CHANGED", muted: true });
+    expect(actor.getSnapshot().context.micMuted).toBe(true);
+
+    actor.send({ type: "STOP", reason: "user" });
+    actor.send({ type: "MIC_MUTE_CHANGED", muted: false });
+    expect(actor.getSnapshot().context.micMuted).toBe(false);
+
+    actor.send({ type: "CAPTURE_STOPPED" });
+    actor.send({ type: "UPLOAD_FINISHED" });
+    actor.send({ type: "RESET" });
+
+    actor.send(startEvent);
+    expect(actor.getSnapshot().context.micMuted).toBe(false);
+  });
+
+  it("ignores mute changes while idle", () => {
+    const actor = createActor(recorderMachine).start();
+
+    actor.send({ type: "MIC_MUTE_CHANGED", muted: true });
+    expect(actor.getSnapshot().context.micMuted).toBe(false);
+  });
+
   it("resets out of needsPermission", () => {
     const actor = createActor(recorderMachine).start();
 

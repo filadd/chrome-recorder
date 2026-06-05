@@ -121,5 +121,8 @@
   },
   "popup_stop": {
     "message": "Detener grabación"
+  },
+  "overlay_mic_muted": {
+    "message": "mic silenciado"
   }
 }

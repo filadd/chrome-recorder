@@ -33,6 +33,7 @@ The **service worker** owns an XState v5 recording-lifecycle machine (snapshot p
 - Uploads run in the offscreen document, never the SW (SW fetch/lifetime limits kill long uploads).
 - Media streams are released the moment the recorder stops — never held through upload finalization (the OS shows a recording indicator as long as they're alive).
 - Captured tab audio must be re-routed to `ctx.destination` or the user stops hearing the call; the mic must never be routed there (feedback).
+- The extension's mic capture is independent of Meet's — Meet's mute does NOT propagate to it. Mute is mirrored by watching the mic button's `data-is-muted` attribute and zeroing the mic gain node.
 - S3 part numbers must be consecutive from 1; bucket CORS must expose the `ETag` header; the API's S3Client sets `requestChecksumCalculation: "WHEN_REQUIRED"`.
 - Audio bytes are buffered in memory only — by design (see spec.md §persistence). Persist upload *metadata*, not audio.
 

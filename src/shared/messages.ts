@@ -12,6 +12,7 @@ export type StopReason = "user" | "leave" | "tab-closed" | "track-ended";
 export type SwMessage =
   | { target: "sw"; type: "toggle-recording" }
   | { target: "sw"; type: "stop-recording"; reason: StopReason }
+  | { target: "sw"; type: "mic-mute-changed"; muted: boolean }
   | { target: "sw"; type: "mic-granted" }
   | { target: "sw"; type: "capture-started" }
   | { target: "sw"; type: "capture-stopped" }
@@ -28,9 +29,13 @@ export type SwMessage =
 export type OffscreenMessage =
   | { target: "offscreen"; type: "start-capture"; streamId: string; session: UploadSession }
   | { target: "offscreen"; type: "stop-capture" }
+  | { target: "offscreen"; type: "set-mic-muted"; muted: boolean }
   | { target: "offscreen"; type: "ping" };
 
-export type Message = SwMessage | OffscreenMessage;
+// Delivered with chrome.tabs.sendMessage to the recording tab's content script.
+export type ContentMessage = { target: "content"; type: "query-mic-mute" };
+
+export type Message = SwMessage | OffscreenMessage | ContentMessage;
 
 export const sendMessage = (message: Message): Promise<unknown> =>
   chrome.runtime.sendMessage(message).catch(() => undefined);

@@ -34,12 +34,13 @@ export const sendEvent = (actor: Actor<typeof recorderMachine>, event: MachineEv
 
 const toUiSnapshot = (
   state: UiState,
-  context: { slug: string | null; profileId: UiSnapshot["profileId"]; startedAt: number | null; partsDone: number; error: string | null },
+  context: Omit<UiSnapshot, "state">,
 ): UiSnapshot => ({
   state,
   slug: context.slug,
   profileId: context.profileId,
   startedAt: context.startedAt,
   partsDone: context.partsDone,
+  micMuted: context.micMuted,
   error: context.error,
 });
