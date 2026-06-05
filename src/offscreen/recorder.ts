@@ -13,13 +13,25 @@ interface ActiveRecording {
 }
 
 let active: ActiveRecording | null = null;
+let starting = false;
 let stopRequested = false;
 
-export const isRecording = (): boolean => active != null;
+// `starting` covers the async setup window so a duplicate start can't slip in
+// before `active` is assigned.
+export const isRecording = (): boolean => starting || active != null;
 
 export const startRecording = async (streamId: string, session: UploadSession): Promise<void> => {
+  starting = true;
   stopRequested = false;
 
+  try {
+    await setUpRecording(streamId, session);
+  } finally {
+    starting = false;
+  }
+};
+
+const setUpRecording = async (streamId: string, session: UploadSession): Promise<void> => {
   const tabStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId },

@@ -20,15 +20,18 @@ const errorDetailEl = document.getElementById("error-detail")!;
 const toggleButton = document.getElementById("toggle") as HTMLButtonElement;
 const recoveryEl = document.getElementById("recovery")!;
 const configEl = document.getElementById("config")!;
-const profileSelect = document.getElementById("profile") as HTMLSelectElement;
-const profileDesc = document.getElementById("profile-desc")!;
-const profileFieldsEl = document.getElementById("profile-fields")!;
-const userIdInput = document.getElementById("user-id") as HTMLInputElement;
-const micSection = document.getElementById("mic")!;
 
 let settings: Settings;
+let micGranted = false;
+let currentSnapshot: UiSnapshot | null = null;
 
-const renderStatus = (snapshot: UiSnapshot) => {
+const renderStatus = () => {
+  if (currentSnapshot == null) {
+    return;
+  }
+
+  const snapshot = currentSnapshot;
+
   statusEl.textContent = t(`popup_status_${snapshot.state}`);
   statusEl.className = `status ${snapshot.state === "recording" ? "recording" : ""} ${snapshot.state === "error" ? "error" : ""}`;
 
@@ -37,10 +40,12 @@ const renderStatus = (snapshot: UiSnapshot) => {
   errorDetailEl.textContent = showError ? snapshot.error : "";
 
   const stoppable = snapshot.state === "recording" || snapshot.state === "arming";
-  const startable = ["idle", "finished", "error"].includes(snapshot.state);
+  const startable = ["idle", "needsPermission", "finished", "error"].includes(snapshot.state);
 
   toggleButton.classList.toggle("hidden", !stoppable && !startable);
-  toggleButton.textContent = t(stoppable ? "popup_stop" : "popup_start");
+  toggleButton.textContent = t(
+    stoppable ? "popup_stop" : micGranted ? "popup_start" : "popup_grant_mic",
+  );
 
   // While a session is active the popup is a status surface only — profile,
   // metadata, and identity must not change mid-recording.
@@ -54,6 +59,8 @@ const renderStatus = (snapshot: UiSnapshot) => {
 
 const renderProfileFields = () => {
   const profile = PROFILES[settings.profileId];
+  const profileDesc = document.getElementById("profile-desc")!;
+  const profileFieldsEl = document.getElementById("profile-fields")!;
 
   profileDesc.textContent = t(profile.descriptionKey);
   profileFieldsEl.replaceChildren();
@@ -85,6 +92,10 @@ const renderProfileFields = () => {
 
 const init = async () => {
   settings = await getSettings();
+  micGranted = await getMicGranted();
+
+  const profileSelect = document.getElementById("profile") as HTMLSelectElement;
+  const userIdInput = document.getElementById("user-id") as HTMLInputElement;
 
   for (const profile of Object.values(PROFILES)) {
     const option = document.createElement("option");
@@ -108,27 +119,35 @@ const init = async () => {
     setSettings(settings);
   });
 
-  renderStatus(await getSnapshot());
-  onSnapshotChange(renderStatus);
-
-  if (!(await getMicGranted())) {
-    micSection.classList.remove("hidden");
-  }
-
-  document.getElementById("grant-mic")!.addEventListener("click", () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL("src/permission/permission.html") });
-  });
-
-  // The popup click is both the activeTab invocation and the user gesture, so a
-  // start from here always satisfies tabCapture's requirements.
+  // Without the mic grant the main action becomes the permission request — the
+  // permission page can't be skipped, so don't offer a start that would bounce.
   toggleButton.addEventListener("click", () => {
+    if (!micGranted) {
+      chrome.tabs.create({ url: chrome.runtime.getURL("src/permission/permission.html") });
+      return;
+    }
+
     sendMessage({ target: "sw", type: "toggle-recording" });
   });
 
-  const snapshot = await getSnapshot();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.micGranted != null) {
+      micGranted = changes.micGranted.newValue === true;
+      renderStatus();
+    }
+  });
+
+  currentSnapshot = await getSnapshot();
+  renderStatus();
+
+  onSnapshotChange((value) => {
+    currentSnapshot = value;
+    renderStatus();
+  });
+
   const pending = await getPendingUpload();
   const recordingActive = ["arming", "recording", "stopping", "finalizing"].includes(
-    snapshot.state,
+    currentSnapshot.state,
   );
 
   if (pending != null && !recordingActive) {

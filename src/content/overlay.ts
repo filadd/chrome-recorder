@@ -1,30 +1,21 @@
 import { t } from "../shared/i18n";
 import { getSnapshot, onSnapshotChange, type UiSnapshot } from "../shared/storage";
-import { findHangupButton, findJoinButton, findTopBarAvatar } from "./anchors";
-
-const REANCHOR_INTERVAL_MS = 2_000;
 
 const OVERLAY_STYLE = `
   :host {
     all: initial;
   }
 
-  :host(.mode-topbar) {
-    display: inline-flex;
-    align-items: center;
-  }
-
-  :host(.mode-join) {
-    display: block;
-    margin-bottom: 12px;
-  }
-
   .pill {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2147483647;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    max-width: 340px;
-    margin: 0 8px;
+    max-width: 420px;
     padding: 8px 14px;
     border-radius: 999px;
     background: #303134;
@@ -33,13 +24,6 @@ const OVERLAY_STYLE = `
     font-size: 13px;
     line-height: 1.3;
     white-space: nowrap;
-  }
-
-  .pill.floating {
-    position: fixed;
-    top: 16px;
-    right: 16px;
-    z-index: 2147483647;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   }
 
@@ -74,29 +58,6 @@ const OVERLAY_STYLE = `
   }
 `;
 
-type Placement =
-  | { mode: "topbar" | "join"; anchor: Element; position: InsertPosition }
-  | { mode: "floating" };
-
-// In a call the pill goes in the top bar, right after the account avatar; on the
-// pre-join screen it sits right above the join button; floating is the fallback
-// for whatever Meet DOM we fail to recognize.
-const resolvePlacement = (): Placement => {
-  if (findHangupButton() != null) {
-    const avatar = findTopBarAvatar();
-
-    return avatar != null
-      ? { mode: "topbar", anchor: avatar, position: "afterend" }
-      : { mode: "floating" };
-  }
-
-  const join = findJoinButton();
-
-  return join != null
-    ? { mode: "join", anchor: join, position: "beforebegin" }
-    : { mode: "floating" };
-};
-
 const formatElapsed = (startedAt: number): string => {
   const total = Math.floor((Date.now() - startedAt) / 1000);
   const minutes = Math.floor(total / 60);
@@ -105,8 +66,8 @@ const formatElapsed = (startedAt: number): string => {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 };
 
-// Purely informative — recording is controlled from the extension popup (or the
-// keyboard shortcut); the pill only reflects the snapshot state.
+// Purely informative — recording is controlled from the extension popup; the pill
+// floats top-center and always reflects the snapshot state.
 export const mountOverlay = (): void => {
   const host = document.createElement("div");
   const root = host.attachShadow({ mode: "closed" });
@@ -115,7 +76,7 @@ export const mountOverlay = (): void => {
   style.textContent = OVERLAY_STYLE;
 
   const pill = document.createElement("div");
-  pill.className = "pill hidden";
+  pill.className = "pill";
 
   const dot = document.createElement("span");
   dot.className = "dot";
@@ -124,29 +85,7 @@ export const mountOverlay = (): void => {
 
   pill.append(dot, label);
   root.append(style, pill);
-
-  let currentAnchor: Element | null = null;
-
-  const anchor = () => {
-    const placement = resolvePlacement();
-
-    host.classList.toggle("mode-topbar", placement.mode === "topbar");
-    host.classList.toggle("mode-join", placement.mode === "join");
-    pill.classList.toggle("floating", placement.mode === "floating");
-
-    if (placement.mode === "floating") {
-      if (!host.isConnected || currentAnchor != null) {
-        currentAnchor = null;
-        document.documentElement.append(host);
-      }
-    } else if (!host.isConnected || currentAnchor !== placement.anchor) {
-      currentAnchor = placement.anchor;
-      placement.anchor.insertAdjacentElement(placement.position, host);
-    }
-  };
-
-  setInterval(anchor, REANCHOR_INTERVAL_MS);
-  anchor();
+  document.documentElement.append(host);
 
   let snapshot: UiSnapshot | null = null;
   let timer: number | null = null;
@@ -178,8 +117,6 @@ export const mountOverlay = (): void => {
     } else {
       label.textContent = t("overlay_coachmark");
     }
-
-    pill.classList.remove("hidden");
 
     if (state === "recording" && timer == null) {
       timer = window.setInterval(render, 1000);

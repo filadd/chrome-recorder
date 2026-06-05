@@ -8,6 +8,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   switch (message.type) {
     case "start-capture":
+      // A duplicate start would acquire a second set of streams and orphan the
+      // first one — leaving the mic indicator on with nothing recording.
+      if (isRecording()) {
+        console.warn("[offscreen] start-capture ignored: already recording");
+        break;
+      }
+
       startRecording(message.streamId, message.session).catch((error) => {
         sendMessage({ target: "sw", type: "capture-error", message: String(error) });
       });
