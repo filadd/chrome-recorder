@@ -2,44 +2,9 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
-    <header>
-      <img src="/icons/icon48.png" alt="" width="20" height="20" />
-      <h1 data-i18n="extension_name"></h1>
-    </header>
-
-    <section id="status" class="status"></section>
-    <p id="error-detail" class="error-detail hidden"></p>
-
-    <section class="actions">
-      <button id="toggle" class="hidden"></button>
-    </section>
-
-    <section id="recovery" class="recovery hidden">
-      <p data-i18n="popup_recovery_notice"></p>
-      <div class="row">
-        <button id="recover-retry" data-i18n="popup_recover_retry"></button>
-        <button id="recover-abort" class="secondary" data-i18n="popup_recover_abort"></button>
-      </div>
-    </section>
-
-    <div id="config">
-      <section class="field">
-        <label for="profile" data-i18n="popup_profile_label"></label>
-        <select id="profile"></select>
-        <p id="profile-desc" class="desc"></p>
-      </section>
-
-      <section id="profile-fields"></section>
-
-      <section class="field">
-        <label for="user-id" data-i18n="popup_userid_label"></label>
-        <input id="user-id" type="text" data-i18n-placeholder="popup_userid_placeholder" />
-      </section>
-    </div>
-
-    <script type="module" src="./popup.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="./popup.tsx"></script>
   </body>
 </html>
