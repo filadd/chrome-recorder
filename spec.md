@@ -108,7 +108,7 @@ Verified against AWS docs ([limits](https://docs.aws.amazon.com/AmazonS3/latest/
 
 The offscreen document owns capture; if it dies, capture is over — there is no future audio to protect. Persisting audio bytes (the old extension's IndexedDB chunk store) would only salvage the *unflushed tail* (< one part) after a full browser crash, at the cost of doubling I/O for the entire recording.
 
-**Decision**: audio buffers in memory; `{uploadId, key, bucketRef, profileId, parts: {partNumber → ETag}}` persists to `chrome.storage.local` after every successful part. Worst-case loss on a hard crash = the unflushed tail, bounded by flushing at the 5 MiB floor plus a time-based flush. Recovery on restart completes the uploaded prefix into a playable object. Revisit only if "never lose the last minutes across a browser crash" becomes a product requirement.
+**Decision**: audio buffers in memory; `{uploadId, key, bucketRef, profileId, parts: {partNumber → ETag}}` persists to `chrome.storage.local` after every successful part. Worst-case loss on a hard crash = the unflushed tail — parts can only be cut at the 5 MiB floor (S3 rejects smaller non-final parts, so a time-based flush is impossible), which at 64 kbps means up to ~11 minutes of audio. Recovery on restart completes the uploaded prefix into a playable object. Revisit only if "never lose the last minutes across a browser crash" becomes a product requirement.
 
 ### 4.6 State machine library
 
