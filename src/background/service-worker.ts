@@ -60,7 +60,7 @@ const startRecording = async (
     return { status: "error" };
   }
 
-  const fields = settings.fields[profile.id] ?? {};
+  const fields = settings.meetingFields.values[profile.id] ?? {};
   const missingRequired = profile.fields.some(
     (field) => field.required && !fields[field.key]?.trim(),
   );

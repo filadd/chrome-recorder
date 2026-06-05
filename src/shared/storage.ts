@@ -21,10 +21,18 @@ export interface UiSnapshot {
   error: string | null;
 }
 
+export interface MeetingFields {
+  // The Meet slug the values were typed for — values silently reset when the
+  // active meeting changes, instead of leaking into unrelated recordings.
+  slug: string | null;
+  values: Partial<Record<ProfileId, Record<string, string>>>;
+}
+
 export interface Settings {
   profileId: ProfileId;
   userId: string;
-  fields: Partial<Record<ProfileId, Record<string, string>>>;
+  enabledProfileIds: ProfileId[];
+  meetingFields: MeetingFields;
 }
 
 export interface PendingUpload {
@@ -33,7 +41,35 @@ export interface PendingUpload {
   createdAt: number;
 }
 
-export const DEFAULT_SETTINGS: Settings = { profileId: "orientation", userId: "", fields: {} };
+export const DEFAULT_SETTINGS: Settings = {
+  profileId: "orientation",
+  userId: "",
+  enabledProfileIds: ["orientation"],
+  meetingFields: { slug: null, values: {} },
+};
+
+// Stored settings may predate enabledProfileIds / the meetingFields rename, so
+// the shallow DEFAULT_SETTINGS spread isn't enough — normalize explicitly.
+export const normalizeSettings = (stored: Partial<Settings> | undefined): Settings => {
+  const legacyFields = (stored as { fields?: MeetingFields["values"] } | undefined)?.fields;
+  const merged: Settings = { ...DEFAULT_SETTINGS, ...stored };
+
+  if (legacyFields != null && (stored as Partial<Settings>)?.meetingFields == null) {
+    merged.meetingFields = { slug: null, values: legacyFields };
+  }
+
+  delete (merged as Settings & { fields?: unknown }).fields;
+
+  if (!Array.isArray(merged.enabledProfileIds) || merged.enabledProfileIds.length === 0) {
+    merged.enabledProfileIds = [...DEFAULT_SETTINGS.enabledProfileIds];
+  }
+
+  if (!merged.enabledProfileIds.includes(merged.profileId)) {
+    merged.profileId = merged.enabledProfileIds[0];
+  }
+
+  return merged;
+};
 
 export const DEFAULT_SNAPSHOT: UiSnapshot = {
   state: "idle",
@@ -60,10 +96,10 @@ export const onSnapshotChange = (listener: (snapshot: UiSnapshot) => void): void
   });
 };
 
-export const getSettings = async (): Promise<Settings> => ({
-  ...DEFAULT_SETTINGS,
-  ...(await chrome.storage.local.get<{ settings?: Settings }>("settings")).settings,
-});
+export const getSettings = async (): Promise<Settings> =>
+  normalizeSettings(
+    (await chrome.storage.local.get<{ settings?: Partial<Settings> }>("settings")).settings,
+  );
 
 export const setSettings = (settings: Settings): Promise<void> =>
   chrome.storage.local.set({ settings });
