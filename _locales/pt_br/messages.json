@@ -47,9 +47,6 @@
   "popup_status_needsPermission": {
     "message": "Falta permissão de microfone"
   },
-  "popup_profile_label": {
-    "message": "Perfil de gravação"
-  },
   "popup_userid_label": {
     "message": "Seu identificador"
   },
@@ -67,9 +64,6 @@
   },
   "popup_recovery_notice": {
     "message": "Há uma gravação interrompida sem finalizar."
-  },
-  "popup_dismiss_error": {
-    "message": "Dispensar"
   },
   "profile_orientation_label": {
     "message": "Orientações"
@@ -124,5 +118,67 @@
   },
   "overlay_mic_muted": {
     "message": "mic mudo"
+  },
+  "onboarding_welcome_title": {
+    "message": "Bem-vindo ao Filadd Recorder"
+  },
+  "onboarding_identifier_body": {
+    "message": "Seu identificador marca cada gravação. Configure uma vez — não será pedido novamente."
+  },
+  "onboarding_continue": {
+    "message": "Continuar →"
+  },
+  "onboarding_mic_title": {
+    "message": "Permitir acesso ao microfone"
+  },
+  "onboarding_mic_body": {
+    "message": "Uma página de permissão será aberta uma única vez. O Filadd precisa do seu microfone para incluir sua voz nas gravações."
+  },
+  "onboarding_grant_mic": {
+    "message": "Conceder microfone →"
+  },
+  "onboarding_skip": {
+    "message": "Pular por enquanto"
+  },
+  "settings_title": {
+    "message": "Configurações"
+  },
+  "settings_save": {
+    "message": "Salvar"
+  },
+  "settings_profiles_label": {
+    "message": "Perfis habilitados"
+  },
+  "settings_profile_min_one": {
+    "message": "Pelo menos um perfil deve permanecer habilitado."
+  },
+  "notice_open_meet": {
+    "message": "Abra uma chamada do Google Meet para começar a gravar."
+  },
+  "notice_needs_mic": {
+    "message": "Falta a permissão de microfone para gravar."
+  },
+  "field_required_hint": {
+    "message": "Obrigatório para iniciar a gravação"
+  },
+  "cta_open_meet_first": {
+    "message": "Abra uma chamada do Meet primeiro"
+  },
+  "cta_new_recording": {
+    "message": "Nova gravação"
+  },
+  "card_upload_failed": {
+    "message": "Falha no envio"
+  },
+  "card_finished_sub": {
+    "message": "Pronto para uma nova gravação."
+  },
+  "card_parts_done": {
+    "message": "$COUNT$ partes enviadas",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }

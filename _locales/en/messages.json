@@ -47,9 +47,6 @@
   "popup_status_needsPermission": {
     "message": "Microphone permission missing"
   },
-  "popup_profile_label": {
-    "message": "Recording profile"
-  },
   "popup_userid_label": {
     "message": "Your identifier"
   },
@@ -67,9 +64,6 @@
   },
   "popup_recovery_notice": {
     "message": "There is an interrupted recording pending finalization."
-  },
-  "popup_dismiss_error": {
-    "message": "Dismiss"
   },
   "profile_orientation_label": {
     "message": "Orientation sessions"
@@ -124,5 +118,67 @@
   },
   "overlay_mic_muted": {
     "message": "mic muted"
+  },
+  "onboarding_welcome_title": {
+    "message": "Welcome to Filadd Recorder"
+  },
+  "onboarding_identifier_body": {
+    "message": "Your identifier tags every recording. Set it once — you won't be asked again."
+  },
+  "onboarding_continue": {
+    "message": "Continue →"
+  },
+  "onboarding_mic_title": {
+    "message": "Allow microphone access"
+  },
+  "onboarding_mic_body": {
+    "message": "A permission page will open once. Filadd needs your mic to include your voice in recordings."
+  },
+  "onboarding_grant_mic": {
+    "message": "Grant mic access →"
+  },
+  "onboarding_skip": {
+    "message": "Skip for now"
+  },
+  "settings_title": {
+    "message": "Settings"
+  },
+  "settings_save": {
+    "message": "Save"
+  },
+  "settings_profiles_label": {
+    "message": "Enabled profiles"
+  },
+  "settings_profile_min_one": {
+    "message": "At least one profile must stay enabled."
+  },
+  "notice_open_meet": {
+    "message": "Open a Google Meet call to start recording."
+  },
+  "notice_needs_mic": {
+    "message": "Microphone permission needed to record."
+  },
+  "field_required_hint": {
+    "message": "Required to start recording"
+  },
+  "cta_open_meet_first": {
+    "message": "Open a Meet call first"
+  },
+  "cta_new_recording": {
+    "message": "New recording"
+  },
+  "card_upload_failed": {
+    "message": "Upload failed"
+  },
+  "card_finished_sub": {
+    "message": "Ready for a new recording."
+  },
+  "card_parts_done": {
+    "message": "$COUNT$ parts uploaded",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }

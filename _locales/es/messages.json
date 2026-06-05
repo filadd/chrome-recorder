@@ -47,9 +47,6 @@
   "popup_status_needsPermission": {
     "message": "Falta permiso de micrófono"
   },
-  "popup_profile_label": {
-    "message": "Perfil de grabación"
-  },
   "popup_userid_label": {
     "message": "Tu identificador"
   },
@@ -67,9 +64,6 @@
   },
   "popup_recovery_notice": {
     "message": "Hay una grabación interrumpida sin finalizar."
-  },
-  "popup_dismiss_error": {
-    "message": "Descartar"
   },
   "profile_orientation_label": {
     "message": "Orientaciones"
@@ -124,5 +118,67 @@
   },
   "overlay_mic_muted": {
     "message": "mic silenciado"
+  },
+  "onboarding_welcome_title": {
+    "message": "Bienvenido a Filadd Recorder"
+  },
+  "onboarding_identifier_body": {
+    "message": "Tu identificador etiqueta cada grabación. Configuralo una vez — no se te vuelve a pedir."
+  },
+  "onboarding_continue": {
+    "message": "Continuar →"
+  },
+  "onboarding_mic_title": {
+    "message": "Permitir acceso al micrófono"
+  },
+  "onboarding_mic_body": {
+    "message": "Se abrirá una página de permiso una sola vez. Filadd necesita tu micrófono para incluir tu voz en las grabaciones."
+  },
+  "onboarding_grant_mic": {
+    "message": "Otorgar micrófono →"
+  },
+  "onboarding_skip": {
+    "message": "Omitir por ahora"
+  },
+  "settings_title": {
+    "message": "Configuración"
+  },
+  "settings_save": {
+    "message": "Guardar"
+  },
+  "settings_profiles_label": {
+    "message": "Perfiles habilitados"
+  },
+  "settings_profile_min_one": {
+    "message": "Al menos un perfil debe quedar habilitado."
+  },
+  "notice_open_meet": {
+    "message": "Abrí una llamada de Google Meet para empezar a grabar."
+  },
+  "notice_needs_mic": {
+    "message": "Falta el permiso de micrófono para grabar."
+  },
+  "field_required_hint": {
+    "message": "Obligatorio para iniciar la grabación"
+  },
+  "cta_open_meet_first": {
+    "message": "Abrí una llamada de Meet primero"
+  },
+  "cta_new_recording": {
+    "message": "Nueva grabación"
+  },
+  "card_upload_failed": {
+    "message": "Falló la subida"
+  },
+  "card_finished_sub": {
+    "message": "Listo para una nueva grabación."
+  },
+  "card_parts_done": {
+    "message": "$COUNT$ partes subidas",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }
