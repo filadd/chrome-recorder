@@ -24,7 +24,7 @@ npm run dev            # API on :8787 (needs .env, see api/.env.example)
 
 ## Architecture in one paragraph
 
-The **service worker** owns an XState v5 recording-lifecycle machine (snapshot persisted to `chrome.storage.session`, rehydrated on every SW restart), orchestrates everything, and owns all persistence; the **offscreen document** (`USER_MEDIA` reason — no lifetime cap) owns all media handles and the upload loop, reporting part ETags to the SW via messages; the **content script** injects an informative Shadow-DOM pill (above the join button on the pre-join screen, next to the account avatar in the in-call top bar, floating fallback) and detects call end via the locale-independent `call_end` Material-icon ligature; the **popup** holds the start/stop controls, profile selection, metadata fields, and the user identifier; a one-time **permission page** obtains the mic grant (offscreen docs can't show prompts). UI surfaces never poll — they render a snapshot from `chrome.storage.local` reactively via `onChanged`.
+The **service worker** owns an XState v5 recording-lifecycle machine (snapshot persisted to `chrome.storage.session`, rehydrated on every SW restart), orchestrates everything, and owns all persistence; the **offscreen document** (`USER_MEDIA` reason — no lifetime cap) owns all media handles and the upload loop, reporting part ETags to the SW via messages; the **content script** injects an informative Shadow-DOM pill (above the join button on the pre-join screen, next to the account avatar in the in-call top bar, floating fallback) and detects call end via the locale-independent `call_end` Material-icon ligature; the **popup** (React) holds the start/stop CTA, profile tabs, per-meeting metadata fields, a first-run onboarding overlay (identifier + mic grant), and a settings overlay (identifier edit + profile enable/disable — only `orientation` by default; the tab selector hides when a single profile is enabled); a one-time **permission page** (React) obtains the mic grant (offscreen docs can't show prompts). UI surfaces never poll — they render a snapshot from `chrome.storage.local` reactively via `onChanged`.
 
 ## Hard-won constraints — do not "simplify" these away
 
@@ -40,6 +40,8 @@ The **service worker** owns an XState v5 recording-lifecycle machine (snapshot p
 ## Conventions
 
 - Named exports, arrow functions, one module per component/function unless highly cohesive.
+- UI pages (popup, permission) are React 19; the content-script pill stays vanilla Shadow-DOM to keep the Meet bundle light. Storage reaches React through the hooks in `src/shared/hooks/` — no polling, no query library.
+- Profile metadata is tied to the Meet slug it was typed for (`settings.meetingFields`) and resets silently on a different meeting.
 - No TypeScript enums — const maps with derived types.
 - Null checks via `value == null`.
 - i18n: every user-visible string goes through `chrome.i18n` (`_locales/{es,en,pt_br}`, Spanish default).
