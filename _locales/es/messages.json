@@ -71,29 +71,68 @@
   "profile_orientation_desc": {
     "message": "Sesiones de orientación; se transcriben automáticamente."
   },
-  "profile_private_label": {
-    "message": "Conversaciones privadas"
-  },
-  "profile_private_desc": {
-    "message": "Grabaciones personales."
-  },
   "profile_project_label": {
     "message": "Proyecto"
   },
   "profile_project_desc": {
-    "message": "Conversaciones asociadas a un proyecto."
+    "message": "Conversaciones asociadas a un pitch."
   },
-  "field_title": {
-    "message": "Título"
+  "field_session": {
+    "message": "Sesión"
   },
-  "field_title_ph": {
-    "message": "Título opcional"
+  "field_session_ph": {
+    "message": "ID de la sesión"
   },
-  "field_project": {
-    "message": "Proyecto"
+  "session_select_placeholder": {
+    "message": "Elegí la sesión…"
   },
-  "field_project_ph": {
-    "message": "Identificador del proyecto"
+  "session_select_loading": {
+    "message": "Cargando sesiones…"
+  },
+  "session_select_empty": {
+    "message": "No hay sesiones hoy — ingresá el ID a mano."
+  },
+  "session_login_prompt": {
+    "message": "Iniciá sesión en Filadd para ver tus sesiones de hoy."
+  },
+  "session_login_cta": {
+    "message": "Iniciar sesión en Filadd"
+  },
+  "session_fetch_error": {
+    "message": "No se pudieron cargar las sesiones — ingresá el ID a mano."
+  },
+  "field_pitch": {
+    "message": "Pitch"
+  },
+  "field_pitch_ph": {
+    "message": "Pitch de Notion"
+  },
+  "pitch_select_placeholder": {
+    "message": "Elegí el pitch…"
+  },
+  "pitch_list_empty": {
+    "message": "Agregá pitches desde la configuración (⚙) para poder grabar."
+  },
+  "field_participants": {
+    "message": "Participantes"
+  },
+  "field_participants_ph": {
+    "message": "Nombres separados por coma"
+  },
+  "settings_pitches_label": {
+    "message": "Pitches (Notion)"
+  },
+  "settings_pitch_label_ph": {
+    "message": "Nombre del pitch"
+  },
+  "settings_pitch_url_ph": {
+    "message": "URL de la página de Notion"
+  },
+  "settings_pitch_add": {
+    "message": "Agregar pitch"
+  },
+  "settings_pitch_invalid_url": {
+    "message": "No parece una URL de página de Notion."
   },
   "permission_title": {
     "message": "Permiso de micrófono"

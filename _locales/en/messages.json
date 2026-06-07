@@ -71,29 +71,68 @@
   "profile_orientation_desc": {
     "message": "Orientation sessions; transcribed automatically."
   },
-  "profile_private_label": {
-    "message": "Private conversations"
-  },
-  "profile_private_desc": {
-    "message": "Personal recordings."
-  },
   "profile_project_label": {
     "message": "Project"
   },
   "profile_project_desc": {
-    "message": "Conversations tied to a project."
+    "message": "Conversations tied to a pitch."
   },
-  "field_title": {
-    "message": "Title"
+  "field_session": {
+    "message": "Session"
   },
-  "field_title_ph": {
-    "message": "Optional title"
+  "field_session_ph": {
+    "message": "Session ID"
   },
-  "field_project": {
-    "message": "Project"
+  "session_select_placeholder": {
+    "message": "Pick the session…"
   },
-  "field_project_ph": {
-    "message": "Project identifier"
+  "session_select_loading": {
+    "message": "Loading sessions…"
+  },
+  "session_select_empty": {
+    "message": "No sessions today — enter the ID manually."
+  },
+  "session_login_prompt": {
+    "message": "Log in to Filadd to see today's sessions."
+  },
+  "session_login_cta": {
+    "message": "Log in to Filadd"
+  },
+  "session_fetch_error": {
+    "message": "Couldn't load sessions — enter the ID manually."
+  },
+  "field_pitch": {
+    "message": "Pitch"
+  },
+  "field_pitch_ph": {
+    "message": "Notion pitch"
+  },
+  "pitch_select_placeholder": {
+    "message": "Pick the pitch…"
+  },
+  "pitch_list_empty": {
+    "message": "Add pitches from settings (⚙) to start recording."
+  },
+  "field_participants": {
+    "message": "Participants"
+  },
+  "field_participants_ph": {
+    "message": "Comma-separated names"
+  },
+  "settings_pitches_label": {
+    "message": "Pitches (Notion)"
+  },
+  "settings_pitch_label_ph": {
+    "message": "Pitch name"
+  },
+  "settings_pitch_url_ph": {
+    "message": "Notion page URL"
+  },
+  "settings_pitch_add": {
+    "message": "Add pitch"
+  },
+  "settings_pitch_invalid_url": {
+    "message": "Doesn't look like a Notion page URL."
   },
   "permission_title": {
     "message": "Microphone permission"
