@@ -5,7 +5,11 @@ import { useMicGranted } from "../../shared/hooks/useMicGranted";
 import { usePendingUpload } from "../../shared/hooks/usePendingUpload";
 import { useSettings } from "../../shared/hooks/useSettings";
 import { useSnapshot } from "../../shared/hooks/useSnapshot";
-import { clearMeetingFields, reconcileMeetingFields } from "../../shared/meeting-fields";
+import {
+  applyFieldChange,
+  clearMeetingFields,
+  reconcileMeetingFields,
+} from "../../shared/meeting-fields";
 import { sendMessage } from "../../shared/messages";
 import { useActiveMeetTab } from "../hooks/useActiveMeetTab";
 import { openPermissionPage } from "../open-permission-page";
@@ -68,15 +72,7 @@ export const Popup = () => {
   const showForm = !view.busy && !view.done;
 
   const handleFieldChange = (key: string, value: string) =>
-    update({
-      meetingFields: {
-        ...settings.meetingFields,
-        values: {
-          ...settings.meetingFields.values,
-          [profile.id]: { ...fieldValues, [key]: value },
-        },
-      },
-    });
+    update(applyFieldChange(settings, profile.id, key, value));
 
   const handleCta = () => {
     if (view.ctaKind === "newRecording") {
@@ -134,7 +130,12 @@ export const Popup = () => {
               />
             ) : null}
 
-            <ProfileFieldsForm profile={profile} values={fieldValues} onChange={handleFieldChange} />
+            <ProfileFieldsForm
+              profile={profile}
+              values={fieldValues}
+              pitches={settings.pitches}
+              onChange={handleFieldChange}
+            />
 
             {view.notOnMeet ? <ContextualNotice kind="meet" /> : null}
             {!view.notOnMeet && view.needsMic ? <ContextualNotice kind="mic" /> : null}

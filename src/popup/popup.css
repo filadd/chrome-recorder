@@ -272,6 +272,70 @@ button {
   color: #9a9a9a;
 }
 
+.field-login {
+  align-self: flex-start;
+  padding: 5px 9px;
+  border: 1.5px solid #1a1a1a;
+  border-radius: 6px;
+  background: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.field-login:hover {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+/* ── settings pitch list ── */
+.pitch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+
+.pitch-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pitch-remove {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  font-size: 11px;
+  color: #9a9a9a;
+}
+
+.pitch-remove:hover {
+  color: #c43434;
+}
+
+.overlay-input.err {
+  border-color: #c43434;
+}
+
+.overlay-secondary {
+  padding: 6px 10px;
+  border: 1.5px solid #c8c4bc;
+  border-radius: 6px;
+  background: #f8f7f5;
+  font-size: 12px;
+}
+
+.overlay-secondary:disabled {
+  color: #ccc9c3;
+  cursor: not-allowed;
+}
+
+.overlay-secondary:not(:disabled):hover {
+  background: #ede9e3;
+}
+
 /* ── notices ── */
 .notice {
   margin: 0;

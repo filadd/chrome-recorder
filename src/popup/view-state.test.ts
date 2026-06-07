@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, DEFAULT_SNAPSHOT, type Settings, type UiSnapshot } from "../shared/storage";
 import { deriveView } from "./view-state";
 
+const PITCH_ID = "667c67371f6544719c3c50258bdbfe65";
+
 const snapshot = (state: UiSnapshot["state"]): UiSnapshot => ({ ...DEFAULT_SNAPSHOT, state });
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({
@@ -62,7 +64,10 @@ describe("deriveView", () => {
       settings({
         profileId: "project",
         enabledProfileIds: ["orientation", "project"],
-        meetingFields: { slug: null, values: { project: { projectId: "eng-101" } } },
+        meetingFields: {
+          slug: null,
+          values: { project: { pitchId: PITCH_ID, participants: "Ana, Beto" } },
+        },
       }),
       true,
       null,
@@ -71,27 +76,15 @@ describe("deriveView", () => {
     expect(project.ctaKind).toBe("start");
   });
 
-  it("blocks start until required fields are filled", () => {
-    const base = {
-      profileId: "project" as const,
-      enabledProfileIds: ["orientation", "project"] as const,
-    };
-
-    const empty = deriveView(
-      snapshot("idle"),
-      settings({ ...base, enabledProfileIds: [...base.enabledProfileIds] }),
-      true,
-      "abc",
-    );
+  it("blocks the orientation start until the session is set", () => {
+    const empty = deriveView(snapshot("idle"), settings(), true, "abc");
     expect(empty.ctaKind).toBe("start");
     expect(empty.canStart).toBe(false);
 
     const filled = deriveView(
       snapshot("idle"),
       settings({
-        ...base,
-        enabledProfileIds: [...base.enabledProfileIds],
-        meetingFields: { slug: "abc", values: { project: { projectId: "eng-101" } } },
+        meetingFields: { slug: "abc", values: { orientation: { sessionId: "12345" } } },
       }),
       true,
       "abc",
@@ -99,14 +92,36 @@ describe("deriveView", () => {
     expect(filled.canStart).toBe(true);
   });
 
-  it("treats optional fields as never blocking", () => {
-    const view = deriveView(
+  it("blocks the project start until every required field is filled", () => {
+    const base = {
+      profileId: "project" as const,
+      enabledProfileIds: ["orientation", "project"] as Settings["enabledProfileIds"],
+    };
+
+    const partial = deriveView(
       snapshot("idle"),
-      settings({ profileId: "private", enabledProfileIds: ["orientation", "private"] }),
+      settings({
+        ...base,
+        meetingFields: { slug: "abc", values: { project: { pitchId: PITCH_ID } } },
+      }),
       true,
       "abc",
     );
+    expect(partial.ctaKind).toBe("start");
+    expect(partial.canStart).toBe(false);
 
-    expect(view.canStart).toBe(true);
+    const filled = deriveView(
+      snapshot("idle"),
+      settings({
+        ...base,
+        meetingFields: {
+          slug: "abc",
+          values: { project: { pitchId: PITCH_ID, participants: "Ana, Beto" } },
+        },
+      }),
+      true,
+      "abc",
+    );
+    expect(filled.canStart).toBe(true);
   });
 });
