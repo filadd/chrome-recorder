@@ -1,8 +1,8 @@
 // Server-side copy of the extension's profile table (src/profiles/profiles.ts).
-// The API is the trust boundary: bucket and object key are always resolved here,
-// never accepted from the client.
+// The API is the trust boundary: bucket, object key and metadata are always
+// resolved here, never accepted from the client.
 
-export type ProfileId = "orientation" | "private" | "project";
+export type ProfileId = "orientation" | "project";
 export type BucketRef = ProfileId;
 
 export interface ServerProfile {
@@ -12,6 +12,7 @@ export interface ServerProfile {
   autoFields: string[];
   requiredFields: string[];
   optionalFields: string[];
+  fieldPatterns: Record<string, RegExp>;
   attachAsObjectMetadata: boolean;
   contentType: string;
 }
@@ -20,21 +21,11 @@ export const PROFILES: Record<ProfileId, ServerProfile> = {
   orientation: {
     id: "orientation",
     bucket: "orientation",
-    keyTemplate: "orientation/{meetSlug}/{timestamp}.webm",
-    autoFields: ["meetSlug", "timestamp"],
-    requiredFields: [],
+    keyTemplate: "orientation/{timestamp}-{sessionId}.webm",
+    autoFields: ["meetSlug", "timestamp", "userId"],
+    requiredFields: ["sessionId"],
     optionalFields: [],
-    attachAsObjectMetadata: true,
-    contentType: "audio/webm",
-  },
-
-  private: {
-    id: "private",
-    bucket: "private",
-    keyTemplate: "private/{userId}/{date}/{timestamp}.webm",
-    autoFields: ["userId", "date", "timestamp"],
-    requiredFields: [],
-    optionalFields: ["title"],
+    fieldPatterns: { sessionId: /^\d+$/ },
     attachAsObjectMetadata: true,
     contentType: "audio/webm",
   },
@@ -42,10 +33,12 @@ export const PROFILES: Record<ProfileId, ServerProfile> = {
   project: {
     id: "project",
     bucket: "project",
-    keyTemplate: "projects/{projectId}/{userId}/{timestamp}.webm",
-    autoFields: ["userId", "timestamp"],
-    requiredFields: ["projectId"],
+    keyTemplate: "projects/{timestamp}-{uuid}.webm",
+    autoFields: ["meetSlug", "timestamp", "userId", "uuid"],
+    requiredFields: ["pitchId", "participants"],
     optionalFields: [],
+    // Notion page id: 32 hex chars (uuid with the dashes stripped client-side).
+    fieldPatterns: { pitchId: /^[0-9a-f]{32}$/ },
     attachAsObjectMetadata: true,
     contentType: "audio/webm",
   },

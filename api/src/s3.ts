@@ -14,7 +14,6 @@ export const s3 = new S3Client({
 
 const BUCKET_ENV: Record<BucketRef, string> = {
   orientation: "S3_BUCKET_ORIENTATION",
-  private: "S3_BUCKET_PRIVATE",
   project: "S3_BUCKET_PROJECT",
 };
 

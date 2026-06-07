@@ -28,6 +28,29 @@ export const renderKey = (
   });
 };
 
+// Object metadata is the contract with the processing pipeline (see spec §2):
+// only these keys are stamped, under their snake_case pipeline names.
+const META_KEYS: Record<string, string> = {
+  sessionId: "session_id",
+  pitchId: "pitch_id",
+  participants: "participants",
+  meetSlug: "meet_slug",
+  userId: "recorded_by",
+  timestamp: "started_at",
+};
+
+// S3 caps user metadata at 2 KB total and RFC-2047-mangles non-ASCII values on
+// read — diacritics are folded and anything else non-ASCII dropped instead.
+const METADATA_BYTE_LIMIT = 2048;
+
+const sanitizeMetaValue = (value: string): string =>
+  value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7e]/g, "")
+    .trim()
+    .slice(0, 256);
+
 export const buildObjectMetadata = (
   profile: ServerProfile,
   auto: Record<string, string>,
@@ -37,9 +60,26 @@ export const buildObjectMetadata = (
     return undefined;
   }
 
-  const entries = [...Object.entries(auto), ...Object.entries(fields)]
-    .filter(([, value]) => value != null && value !== "")
-    .map(([key, value]) => [key.toLowerCase(), String(value).slice(0, 256)]);
+  const metadata: Record<string, string> = {};
+  let budget = METADATA_BYTE_LIMIT;
 
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  for (const [key, raw] of [...Object.entries(auto), ...Object.entries(fields)]) {
+    const metaKey = META_KEYS[key];
+    const value = raw == null ? "" : sanitizeMetaValue(String(raw));
+
+    if (metaKey == null || value === "") {
+      continue;
+    }
+
+    const room = budget - metaKey.length;
+
+    if (room <= 0) {
+      break;
+    }
+
+    metadata[metaKey] = value.slice(0, room);
+    budget -= metaKey.length + metadata[metaKey].length;
+  }
+
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 };

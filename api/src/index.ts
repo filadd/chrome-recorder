@@ -66,6 +66,14 @@ app.post("/uploads", async (c) => {
     return c.json({ error: `Missing required fields: ${missing.join(", ")}` }, 400);
   }
 
+  const malformed = Object.entries(profile.fieldPatterns).filter(
+    ([key, pattern]) => fields[key] != null && !pattern.test(fields[key]),
+  );
+
+  if (malformed.length > 0) {
+    return c.json({ error: `Malformed fields: ${malformed.map(([key]) => key).join(", ")}` }, 400);
+  }
+
   let key: string;
 
   try {
