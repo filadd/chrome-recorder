@@ -1,6 +1,6 @@
 # filadd-chrome-recorder
 
-Generic Chrome MV3 extension that records Google Meet calls (tab audio + microphone) and streams the recording to S3 via multipart upload while the call is in progress. Successor to `lowcode-orientation-transcriptor-extension` — simpler, more resilient, and configurable through built-in *profiles* (orientation sessions, private conversations, project conversations).
+Generic Chrome MV3 extension that records Google Meet calls (tab audio + microphone) and streams the recording to S3 via multipart upload while the call is in progress. S3 is **transient staging**: an n8n pipeline transcribes each object, routes the output per *profile* (`orientation` → transcription + summary onto the scheduler-api session; `project` → transcript + living context page under a Notion pitch), and deletes the audio. Successor to `lowcode-orientation-transcriptor-extension`.
 
 Read `spec.md` for the full architecture, the research findings behind every major design decision (tabCapture invocation rules, leave-call detection strategy, audio-mixing graph, multipart upload constraints, persistence trade-offs), and the S3 bucket setup requirements.
 
@@ -24,7 +24,7 @@ npm run dev            # API on :8787 (needs .env, see api/.env.example)
 
 ## Architecture in one paragraph
 
-The **service worker** owns an XState v5 recording-lifecycle machine (snapshot persisted to `chrome.storage.session`, rehydrated on every SW restart), orchestrates everything, and owns all persistence; the **offscreen document** (`USER_MEDIA` reason — no lifetime cap) owns all media handles and the upload loop, reporting part ETags to the SW via messages; the **content script** injects an informative Shadow-DOM pill (above the join button on the pre-join screen, next to the account avatar in the in-call top bar, floating fallback) and detects call end via the locale-independent `call_end` Material-icon ligature; the **popup** (React) holds the start/stop CTA, profile tabs, per-meeting metadata fields, a first-run onboarding overlay (identifier + mic grant), and a settings overlay (identifier edit + profile enable/disable — only `orientation` by default; the tab selector hides when a single profile is enabled); a one-time **permission page** (React) obtains the mic grant (offscreen docs can't show prompts). UI surfaces never poll — they render a snapshot from `chrome.storage.local` reactively via `onChanged`.
+The **service worker** owns an XState v5 recording-lifecycle machine (snapshot persisted to `chrome.storage.session`, rehydrated on every SW restart), orchestrates everything, and owns all persistence; the **offscreen document** (`USER_MEDIA` reason — no lifetime cap) owns all media handles and the upload loop, reporting part ETags to the SW via messages; the **content script** injects an informative Shadow-DOM pill (above the join button on the pre-join screen, next to the account avatar in the in-call top bar, floating fallback) and detects call end via the locale-independent `call_end` Material-icon ligature; the **popup** (React) holds the start/stop CTA, profile tabs, the per-profile fields (orientation: dropdown of today's sessions via the Filadd gateway, manual id fallback; project: pitch select + participants with per-pitch prefill), a first-run onboarding overlay (identifier + mic grant), and a settings overlay (identifier edit, profile enable/disable — only `orientation` by default — and the pitch list `{label, Notion URL}`); a one-time **permission page** (React) obtains the mic grant (offscreen docs can't show prompts). UI surfaces never poll — they render a snapshot from `chrome.storage.local` reactively via `onChanged`.
 
 ## Hard-won constraints — do not "simplify" these away
 
@@ -36,6 +36,8 @@ The **service worker** owns an XState v5 recording-lifecycle machine (snapshot p
 - The extension's mic capture is independent of Meet's — Meet's mute does NOT propagate to it. Mute is mirrored by watching the mic button's `data-is-muted` attribute and zeroing the mic gain node.
 - S3 part numbers must be consecutive from 1; bucket CORS must expose the `ETag` header; the API's S3Client sets `requestChecksumCalculation: "WHEN_REQUIRED"`.
 - Audio bytes are buffered in memory only — by design (see spec.md §persistence). Persist upload *metadata*, not audio.
+- **Object metadata is the pipeline contract** (`session_id`, `pitch_id`, `participants`, `meet_slug`, `recorded_by`, `started_at`): set once at `CreateMultipartUpload`, immutable, 2 KB total, ASCII-only values — the API maps/sanitizes them (`api/src/keys.ts`). Mutable state (retry counts) goes in object *tags*, not metadata.
+- Filadd auth is **reused, never reimplemented**: the JWT lives in the non-httpOnly `auth._token.local` cookie on filadd.com (read via `chrome.cookies`); gateway calls work from extension contexts because `https://*.filadd.com/*` host_permissions bypass CORS. Missing cookie → open the normal web login and listen on `cookies.onChanged`.
 
 ## Conventions
 
