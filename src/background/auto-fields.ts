@@ -8,7 +8,6 @@ export const resolveAutoFields = (
 
   const values: Record<AutoField, string> = {
     meetSlug: meetSlug ?? "no-meet",
-    date: now.toISOString().slice(0, 10),
     timestamp: now.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z"),
     userId: userId || "anonymous",
     uuid: crypto.randomUUID(),

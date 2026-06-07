@@ -17,8 +17,8 @@ describe("applyProfileToggle", () => {
 
   it("disables a non-selected profile without touching the selection", () => {
     const settings = applyProfileToggle(
-      { ...withEnabled(["orientation", "private"]), profileId: "orientation" },
-      "private",
+      { ...withEnabled(["orientation", "project"]), profileId: "orientation" },
+      "project",
       false,
     );
 

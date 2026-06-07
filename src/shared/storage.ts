@@ -28,11 +28,21 @@ export interface MeetingFields {
   values: Partial<Record<ProfileId, Record<string, string>>>;
 }
 
+// A pitch the user registered in settings: `id` is the Notion page id parsed
+// from the URL — it's what the recording carries as metadata.
+export interface PitchEntry {
+  id: string;
+  label: string;
+  url: string;
+}
+
 export interface Settings {
   profileId: ProfileId;
   userId: string;
   enabledProfileIds: ProfileId[];
   meetingFields: MeetingFields;
+  pitches: PitchEntry[];
+  participantsByPitch: Record<string, string>;
 }
 
 export interface PendingUpload {
@@ -46,10 +56,16 @@ export const DEFAULT_SETTINGS: Settings = {
   userId: "",
   enabledProfileIds: ["orientation"],
   meetingFields: { slug: null, values: {} },
+  pitches: [],
+  participantsByPitch: {},
 };
 
-// Stored settings may predate enabledProfileIds / the meetingFields rename, so
-// the shallow DEFAULT_SETTINGS spread isn't enough — normalize explicitly.
+const isKnownProfileId = (id: unknown): id is ProfileId =>
+  id === "orientation" || id === "project";
+
+// Stored settings may predate enabledProfileIds / the meetingFields rename, or
+// reference dropped profiles (`private`), so the shallow DEFAULT_SETTINGS
+// spread isn't enough — normalize explicitly.
 export const normalizeSettings = (stored: Partial<Settings> | undefined): Settings => {
   const legacyFields = (stored as { fields?: MeetingFields["values"] } | undefined)?.fields;
   const merged: Settings = { ...DEFAULT_SETTINGS, ...stored };
@@ -60,12 +76,24 @@ export const normalizeSettings = (stored: Partial<Settings> | undefined): Settin
 
   delete (merged as Settings & { fields?: unknown }).fields;
 
-  if (!Array.isArray(merged.enabledProfileIds) || merged.enabledProfileIds.length === 0) {
+  merged.enabledProfileIds = Array.isArray(merged.enabledProfileIds)
+    ? merged.enabledProfileIds.filter(isKnownProfileId)
+    : [];
+
+  if (merged.enabledProfileIds.length === 0) {
     merged.enabledProfileIds = [...DEFAULT_SETTINGS.enabledProfileIds];
   }
 
   if (!merged.enabledProfileIds.includes(merged.profileId)) {
     merged.profileId = merged.enabledProfileIds[0];
+  }
+
+  if (!Array.isArray(merged.pitches)) {
+    merged.pitches = [];
+  }
+
+  if (merged.participantsByPitch == null || typeof merged.participantsByPitch !== "object") {
+    merged.participantsByPitch = {};
   }
 
   return merged;

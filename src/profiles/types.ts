@@ -1,6 +1,5 @@
 export const PROFILE_IDS = {
   orientation: "orientation",
-  private: "private",
   project: "project",
 } as const;
 
@@ -12,7 +11,6 @@ export type BucketRef = ProfileId;
 
 export const AUTO_FIELDS = {
   meetSlug: "meetSlug",
-  date: "date",
   timestamp: "timestamp",
   userId: "userId",
   uuid: "uuid",
@@ -26,7 +24,6 @@ export interface ProfileField {
   placeholderKey: string;
   type: "text" | "select";
   required: boolean;
-  options?: { value: string; labelKey: string }[];
 }
 
 export interface RecordingProfile {
