@@ -11,20 +11,30 @@ const CTA_LABEL_KEYS: Record<CtaKind, string> = {
 interface Props {
   kind: CtaKind;
   disabled: boolean;
+  loading: boolean;
   onClick: () => void;
 }
 
-export const CtaBar = ({ kind, disabled, onClick }: Props) => (
+export const CtaBar = ({ kind, disabled, loading, onClick }: Props) => (
   <div className="cta-bar">
     {kind !== "newRecording" ? <p className="cta-note">{t("popup_required_note")}</p> : null}
     <button
       className={`cta${kind === "newRecording" ? " back" : ""}`}
-      disabled={disabled}
+      disabled={disabled || loading}
       onClick={onClick}
     >
-      {kind === "start" ? <span className="cta-dot">● </span> : null}
-      {kind === "newRecording" ? "← " : null}
-      {t(CTA_LABEL_KEYS[kind])}
+      {loading ? (
+        <>
+          <span className="cta-spinner" />
+          {t("popup_starting")}
+        </>
+      ) : (
+        <>
+          {kind === "start" ? <span className="cta-dot">● </span> : null}
+          {kind === "newRecording" ? "← " : null}
+          {t(CTA_LABEL_KEYS[kind])}
+        </>
+      )}
     </button>
   </div>
 );

@@ -152,6 +152,9 @@
   "popup_start": {
     "message": "Iniciar grabación"
   },
+  "popup_starting": {
+    "message": "Iniciando…"
+  },
   "popup_stop": {
     "message": "Detener grabación"
   },

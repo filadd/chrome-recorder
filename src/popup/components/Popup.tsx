@@ -37,7 +37,25 @@ export const Popup = () => {
   const loaded = snapshotLoaded && settingsLoaded && micLoaded && pendingLoaded && tabLoaded;
 
   const [overlay, setOverlay] = useState<Overlay>("none");
+  const [starting, setStarting] = useState(false);
   const view = deriveView(snapshot, settings, micGranted, slug);
+
+  // The SW round-trip (toggle → arming snapshot) takes a beat; show an
+  // optimistic loading state on the start button until the snapshot moves
+  // off idle, with a fallback so a failed start doesn't strand the spinner.
+  useEffect(() => {
+    if (!starting) {
+      return;
+    }
+
+    if (snapshot.state !== "idle") {
+      setStarting(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setStarting(false), 5000);
+    return () => clearTimeout(timer);
+  }, [starting, snapshot.state]);
 
   // Field values belong to the meeting they were typed for — reconcile once
   // per popup open, as soon as the active tab's slug is known.
@@ -86,6 +104,7 @@ export const Popup = () => {
       return;
     }
 
+    setStarting(true);
     sendMessage({ target: "sw", type: "toggle-recording" });
   };
 
@@ -144,7 +163,12 @@ export const Popup = () => {
       </main>
 
       {!view.busy && !showRecovery ? (
-        <CtaBar kind={view.ctaKind} disabled={!view.canStart} onClick={handleCta} />
+        <CtaBar
+          kind={view.ctaKind}
+          disabled={!view.canStart}
+          loading={starting}
+          onClick={handleCta}
+        />
       ) : null}
     </div>
   );
