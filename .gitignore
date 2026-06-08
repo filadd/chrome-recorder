@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+api/.aws-sam/
 
 # Environment / secrets
 .env

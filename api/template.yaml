@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: filadd-chrome-recorder upload API — multipart signer (Hono on Lambda + Function URL)
+
+Parameters:
+  ApiToken:
+    Type: String
+    NoEcho: true
+    Description: "Shared bearer token the extension must send (Authorization: Bearer <token>)"
+  AllowedOrigins:
+    Type: String
+    Description: Comma-separated allowed origins, e.g. chrome-extension://hokpbkbpbggoeibolomknakfccmgoeae
+  StagingBucket:
+    Type: String
+    Default: filadd-chrome-recorder-prod
+    Description: Bucket recordings are uploaded to — referenced here, created/configured out of band
+  BucketRegion:
+    Type: String
+    Default: sa-east-1
+    Description: Region the bucket lives in (may differ from the Lambda's region)
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 30
+    MemorySize: 256
+
+Resources:
+  UploadApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/lambda.ts
+        Target: node20
+        Sourcemap: false
+        Minify: false
+    Properties:
+      Handler: lambda.handler
+      CodeUri: .
+      Description: Issues presigned multipart URLs and runs control-plane S3 calls
+      Environment:
+        Variables:
+          API_TOKEN: !Ref ApiToken
+          ALLOWED_ORIGINS: !Ref AllowedOrigins
+          S3_REGION: !Ref BucketRegion
+          S3_BUCKET_ORIENTATION: !Ref StagingBucket
+          S3_BUCKET_PROJECT: !Ref StagingBucket
+      # No static AWS keys: the execution role below is the only credential, scoped
+      # to the multipart actions on the staging bucket. Presigned part URLs are
+      # signed with these role credentials, so the role must allow what the browser
+      # will later PUT (s3:PutObject).
+      Policies:
+        - Statement:
+            - Sid: MultipartOnStagingBucket
+              Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:AbortMultipartUpload
+                - s3:ListMultipartUploadParts
+              Resource: !Sub arn:aws:s3:::${StagingBucket}/*
+      # CORS is handled in-app (Hono, origin allowlist from ALLOWED_ORIGINS) so the
+      # behavior is identical locally and on Lambda; the Function URL only provides
+      # the HTTPS endpoint. Auth is NONE here — the app does its own bearer check.
+      FunctionUrlConfig:
+        AuthType: NONE
+
+Outputs:
+  UploadApiUrl:
+    Description: Function URL base — set as the extension's API_BASE_URL
+    Value: !GetAtt UploadApiFunctionUrl.FunctionUrl
