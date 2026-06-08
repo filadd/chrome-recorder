@@ -12,8 +12,8 @@ export const UPLOAD_MAX_ATTEMPTS = 6;
 export const UPLOAD_BACKOFF_BASE_MS = 1_000;
 export const UPLOAD_BACKOFF_CAP_MS = 30_000;
 
-export const API_BASE_URL = "http://localhost:8787";
-export const API_TOKEN = "dev-token";
+export const API_BASE_URL = "https://54rfszznmzgpyax7tu6j5parem0wjtbt.lambda-url.sa-east-1.on.aws";
+export const API_TOKEN = "a2307c59a8176e08c6199288ccac9f28743b11763ae64161af632c44d1734e20";
 
 export const LEAVE_DEBOUNCE_MS = 1_500;
 export const FINISHED_RESET_MS = 8_000;

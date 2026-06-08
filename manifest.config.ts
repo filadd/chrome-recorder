@@ -26,6 +26,7 @@ export default defineManifest({
   host_permissions: [
     "http://localhost/*",
     "https://*.amazonaws.com/*",
+    "https://*.lambda-url.sa-east-1.on.aws/*",
     "https://*.filadd.com/*",
   ],
 
