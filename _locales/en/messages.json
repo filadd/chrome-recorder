@@ -182,8 +182,8 @@
   "settings_title": {
     "message": "Settings"
   },
-  "settings_save": {
-    "message": "Save"
+  "settings_back": {
+    "message": "Back"
   },
   "settings_profiles_label": {
     "message": "Enabled profiles"

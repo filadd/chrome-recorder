@@ -18,6 +18,8 @@ export const PermissionPage = () => {
 
       await sendMessage({ target: "sw", type: "mic-granted" });
       setResult("granted");
+
+      setTimeout(() => sendMessage({ target: "sw", type: "close-permission-tab" }), 1200);
     } catch {
       setResult("denied");
     }
@@ -25,11 +27,14 @@ export const PermissionPage = () => {
 
   return (
     <main>
+      <div className="badge">F</div>
       <h1>{t("permission_title")}</h1>
       <p>{t("permission_body")}</p>
       {result !== "granted" ? <button onClick={handleGrant}>{t("permission_grant")}</button> : null}
       {result !== "pending" ? (
-        <p>{result === "granted" ? t("permission_granted") : t("permission_denied")}</p>
+        <p className={`result ${result === "granted" ? "ok" : "err"}`}>
+          {result === "granted" ? t("permission_granted") : t("permission_denied")}
+        </p>
       ) : null}
     </main>
   );

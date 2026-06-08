@@ -14,6 +14,7 @@ export type SwMessage =
   | { target: "sw"; type: "stop-recording"; reason: StopReason }
   | { target: "sw"; type: "mic-mute-changed"; muted: boolean }
   | { target: "sw"; type: "mic-granted" }
+  | { target: "sw"; type: "close-permission-tab" }
   | { target: "sw"; type: "capture-started" }
   | { target: "sw"; type: "capture-stopped" }
   | { target: "sw"; type: "capture-error"; message: string }

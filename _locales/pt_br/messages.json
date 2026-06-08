@@ -182,8 +182,8 @@
   "settings_title": {
     "message": "Configurações"
   },
-  "settings_save": {
-    "message": "Salvar"
+  "settings_back": {
+    "message": "Voltar"
   },
   "settings_profiles_label": {
     "message": "Perfis habilitados"

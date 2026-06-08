@@ -18,22 +18,27 @@ const OVERLAY_STYLE = `
     max-width: 420px;
     padding: 8px 14px;
     border-radius: 999px;
-    background: #303134;
-    color: #e8eaed;
+    background: #fff;
+    color: #1a1a1a;
+    border: 1.5px solid #c8c4bc;
     font-family: "Google Sans", Roboto, sans-serif;
     font-size: 13px;
     line-height: 1.3;
     white-space: nowrap;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   }
 
   .pill.attention {
-    background: #1a73e8;
+    background: #1a1a1a;
+    color: #fff;
+    border-color: #1a1a1a;
     white-space: normal;
   }
 
   .pill.error {
-    background: #5c1d18;
+    background: #fff5f5;
+    border-color: #c43434;
+    color: #c43434;
     white-space: normal;
   }
 
@@ -42,7 +47,7 @@ const OVERLAY_STYLE = `
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #dc2626;
+    background: #c43434;
   }
 
   .recording .dot {

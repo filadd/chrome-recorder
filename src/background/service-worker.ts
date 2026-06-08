@@ -177,6 +177,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         actor.send({ type: "MIC_GRANTED" });
         return undefined;
 
+      case "close-permission-tab":
+        if (sender.tab?.id != null) {
+          await chrome.tabs.remove(sender.tab.id);
+        }
+        return undefined;
+
       case "mic-mute-changed":
         applyMicMute(actor, message.muted);
         return undefined;
