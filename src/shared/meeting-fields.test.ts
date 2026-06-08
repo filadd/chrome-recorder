@@ -41,9 +41,9 @@ describe("clearMeetingFields", () => {
 
 describe("applyFieldChange", () => {
   it("stores the value under the profile", () => {
-    const settings = applyFieldChange(DEFAULT_SETTINGS, "orientation", "sessionId", "12345");
+    const settings = applyFieldChange(DEFAULT_SETTINGS, "project", "participants", "Ana, Beto");
 
-    expect(settings.meetingFields.values.orientation).toEqual({ sessionId: "12345" });
+    expect(settings.meetingFields.values.project).toEqual({ participants: "Ana, Beto" });
   });
 
   it("prefills participants from the pitch memory when a pitch is picked", () => {

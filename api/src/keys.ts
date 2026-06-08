@@ -31,7 +31,6 @@ export const renderKey = (
 // Object metadata is the contract with the processing pipeline (see spec §2):
 // only these keys are stamped, under their snake_case pipeline names.
 const META_KEYS: Record<string, string> = {
-  sessionId: "session_id",
   pitchId: "pitch_id",
   participants: "participants",
   meetSlug: "meet_slug",

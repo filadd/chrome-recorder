@@ -2,7 +2,6 @@ import type { ProfileField, RecordingProfile } from "../../profiles/types";
 import { t } from "../../shared/i18n";
 import type { PitchEntry } from "../../shared/storage";
 import { PitchField } from "./PitchField";
-import { SessionField } from "./SessionField";
 
 interface Props {
   profile: RecordingProfile;
@@ -14,12 +13,6 @@ interface Props {
 export const ProfileFieldsForm = ({ profile, values, pitches, onChange }: Props) => {
   const control = (field: ProfileField, value: string, missing: boolean) => {
     const handleChange = (next: string) => onChange(field.key, next);
-
-    if (field.key === "sessionId") {
-      return (
-        <SessionField value={value} placeholder={t(field.placeholderKey)} onChange={handleChange} />
-      );
-    }
 
     if (field.key === "pitchId") {
       return <PitchField value={value} pitches={pitches} onChange={handleChange} />;

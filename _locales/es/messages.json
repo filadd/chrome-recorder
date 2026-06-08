@@ -65,41 +65,11 @@
   "popup_recovery_notice": {
     "message": "Hay una grabación interrumpida sin finalizar."
   },
-  "profile_orientation_label": {
-    "message": "Orientaciones"
-  },
-  "profile_orientation_desc": {
-    "message": "Sesiones de orientación; se transcriben automáticamente."
-  },
   "profile_project_label": {
     "message": "Proyecto"
   },
   "profile_project_desc": {
     "message": "Conversaciones asociadas a un pitch."
-  },
-  "field_session": {
-    "message": "Sesión"
-  },
-  "field_session_ph": {
-    "message": "ID de la sesión"
-  },
-  "session_select_placeholder": {
-    "message": "Elegí la sesión…"
-  },
-  "session_select_loading": {
-    "message": "Cargando sesiones…"
-  },
-  "session_select_empty": {
-    "message": "No hay sesiones hoy — ingresá el ID a mano."
-  },
-  "session_login_prompt": {
-    "message": "Iniciá sesión en Filadd para ver tus sesiones de hoy."
-  },
-  "session_login_cta": {
-    "message": "Iniciar sesión en Filadd"
-  },
-  "session_fetch_error": {
-    "message": "No se pudieron cargar las sesiones — ingresá el ID a mano."
   },
   "field_pitch": {
     "message": "Pitch"

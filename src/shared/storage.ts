@@ -52,16 +52,15 @@ export interface PendingUpload {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  profileId: "orientation",
+  profileId: "project",
   userId: "",
-  enabledProfileIds: ["orientation"],
+  enabledProfileIds: ["project"],
   meetingFields: { slug: null, values: {} },
   pitches: [],
   participantsByPitch: {},
 };
 
-const isKnownProfileId = (id: unknown): id is ProfileId =>
-  id === "orientation" || id === "project";
+const isKnownProfileId = (id: unknown): id is ProfileId => id === "project";
 
 // Stored settings may predate enabledProfileIds / the meetingFields rename, or
 // reference dropped profiles (`private`), so the shallow DEFAULT_SETTINGS
@@ -102,7 +101,7 @@ export const normalizeSettings = (stored: Partial<Settings> | undefined): Settin
 export const DEFAULT_SNAPSHOT: UiSnapshot = {
   state: "idle",
   slug: null,
-  profileId: "orientation",
+  profileId: "project",
   startedAt: null,
   partsDone: 0,
   micMuted: false,

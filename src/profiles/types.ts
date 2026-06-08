@@ -1,5 +1,6 @@
+// Only `project` ships today; the table stays a map so other profiles can be
+// re-added without touching the generic profile machinery.
 export const PROFILE_IDS = {
-  orientation: "orientation",
   project: "project",
 } as const;
 

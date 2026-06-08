@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 
-const safeEquals = (a: string, b: string): boolean => {
+export const safeEquals = (a: string, b: string): boolean => {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
 

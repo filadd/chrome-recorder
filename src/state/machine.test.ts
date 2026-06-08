@@ -6,7 +6,7 @@ import { recorderMachine } from "./machine";
 const startEvent = {
   type: "START",
   slug: "abc-defg-hij",
-  profileId: "orientation",
+  profileId: "project",
   startedAt: 1000,
 } as const;
 

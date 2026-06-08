@@ -20,14 +20,11 @@ export default defineManifest({
     128: "icons/icon128.png",
   },
 
-  permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab", "cookies"],
-  // *.filadd.com covers reading the web-session cookie on filadd.com and the
-  // CORS-exempt gateway calls (MV3 host_permissions bypass CORS).
+  permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab"],
   host_permissions: [
     "http://localhost/*",
     "https://*.amazonaws.com/*",
     "https://*.lambda-url.sa-east-1.on.aws/*",
-    "https://*.filadd.com/*",
   ],
 
   background: {

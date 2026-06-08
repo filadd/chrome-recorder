@@ -65,41 +65,11 @@
   "popup_recovery_notice": {
     "message": "There is an interrupted recording pending finalization."
   },
-  "profile_orientation_label": {
-    "message": "Orientation sessions"
-  },
-  "profile_orientation_desc": {
-    "message": "Orientation sessions; transcribed automatically."
-  },
   "profile_project_label": {
     "message": "Project"
   },
   "profile_project_desc": {
     "message": "Conversations tied to a pitch."
-  },
-  "field_session": {
-    "message": "Session"
-  },
-  "field_session_ph": {
-    "message": "Session ID"
-  },
-  "session_select_placeholder": {
-    "message": "Pick the session…"
-  },
-  "session_select_loading": {
-    "message": "Loading sessions…"
-  },
-  "session_select_empty": {
-    "message": "No sessions today — enter the ID manually."
-  },
-  "session_login_prompt": {
-    "message": "Log in to Filadd to see today's sessions."
-  },
-  "session_login_cta": {
-    "message": "Log in to Filadd"
-  },
-  "session_fetch_error": {
-    "message": "Couldn't load sessions — enter the ID manually."
   },
   "field_pitch": {
     "message": "Pitch"

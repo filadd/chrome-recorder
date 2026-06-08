@@ -9,36 +9,16 @@ const withEnabled = (enabledProfileIds: Settings["enabledProfileIds"]): Settings
 });
 
 describe("applyProfileToggle", () => {
-  it("enables a profile keeping the profile-table order", () => {
-    const settings = applyProfileToggle(withEnabled(["project"]), "orientation", true);
+  it("keeps an enabled profile enabled when toggled on again", () => {
+    const settings = applyProfileToggle(withEnabled(["project"]), "project", true);
 
-    expect(settings.enabledProfileIds).toEqual(["orientation", "project"]);
-  });
-
-  it("disables a non-selected profile without touching the selection", () => {
-    const settings = applyProfileToggle(
-      { ...withEnabled(["orientation", "project"]), profileId: "orientation" },
-      "project",
-      false,
-    );
-
-    expect(settings.enabledProfileIds).toEqual(["orientation"]);
-    expect(settings.profileId).toBe("orientation");
-  });
-
-  it("falls the selection back when the selected profile is disabled", () => {
-    const settings = applyProfileToggle(
-      { ...withEnabled(["orientation", "project"]), profileId: "project" },
-      "project",
-      false,
-    );
-
-    expect(settings.profileId).toBe("orientation");
+    expect(settings.enabledProfileIds).toEqual(["project"]);
+    expect(settings.profileId).toBe("project");
   });
 
   it("refuses to disable the last enabled profile", () => {
-    const settings = withEnabled(["orientation"]);
+    const settings = withEnabled(["project"]);
 
-    expect(applyProfileToggle(settings, "orientation", false)).toBe(settings);
+    expect(applyProfileToggle(settings, "project", false)).toBe(settings);
   });
 });

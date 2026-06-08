@@ -26,16 +26,6 @@ describe("sanitizeSegment", () => {
 });
 
 describe("renderKey", () => {
-  it("renders the orientation template", () => {
-    const key = renderKey(
-      PROFILES.orientation,
-      { meetSlug: "abc-defg-hij", timestamp: "20260607T150200Z", userId: "ana@filadd.com" },
-      { sessionId: "12345" },
-    );
-
-    expect(key).toBe("orientation/20260607T150200Z-12345.webm");
-  });
-
   it("renders the project template from auto fields only", () => {
     const key = renderKey(
       PROFILES.project,
@@ -53,9 +43,9 @@ describe("renderKey", () => {
 
   it("prefers auto values over client fields on collision", () => {
     const key = renderKey(
-      PROFILES.orientation,
-      { meetSlug: "abc", timestamp: "t1", userId: "u" },
-      { sessionId: "12345", timestamp: "evil" },
+      PROFILES.project,
+      { meetSlug: "abc", timestamp: "t1", userId: "u", uuid: "u1" },
+      { pitchId: PITCH_ID, participants: "Ana", timestamp: "evil" },
     );
 
     expect(key).toContain("t1");
@@ -63,16 +53,14 @@ describe("renderKey", () => {
   });
 
   it("throws on missing placeholder values", () => {
-    expect(() => renderKey(PROFILES.orientation, { meetSlug: "abc" }, {})).toThrow(
-      /\{timestamp\}/,
-    );
+    expect(() => renderKey(PROFILES.project, { meetSlug: "abc" }, {})).toThrow(/\{timestamp\}/);
   });
 
   it("neutralizes traversal in values", () => {
     const key = renderKey(
-      PROFILES.orientation,
-      { meetSlug: "abc", timestamp: "t", userId: "u" },
-      { sessionId: "../../12345" },
+      PROFILES.project,
+      { meetSlug: "abc", timestamp: "t", userId: "u", uuid: "../../12345" },
+      { pitchId: PITCH_ID, participants: "Ana" },
     );
 
     expect(key.split("/").every((segment) => segment !== ".." && segment !== "")).toBe(true);
@@ -87,13 +75,17 @@ describe("buildObjectMetadata", () => {
   };
 
   it("maps contract fields to their snake_case pipeline keys", () => {
-    const metadata = buildObjectMetadata(PROFILES.orientation, auto, { sessionId: "12345" });
+    const metadata = buildObjectMetadata(PROFILES.project, auto, {
+      pitchId: PITCH_ID,
+      participants: "Ana, Beto",
+    });
 
     expect(metadata).toEqual({
       meet_slug: "abc-defg-hij",
       started_at: "20260607T150200Z",
       recorded_by: "ana@filadd.com",
-      session_id: "12345",
+      pitch_id: PITCH_ID,
+      participants: "Ana, Beto",
     });
   });
 
@@ -127,14 +119,14 @@ describe("buildObjectMetadata", () => {
   });
 
   it("enforces the 2KB aggregate cap", () => {
-    const fields = { sessionId: "1".repeat(300) };
+    const fields = { pitchId: PITCH_ID, participants: "p".repeat(2000) };
     const longAuto = {
       meetSlug: "m".repeat(300),
       timestamp: "t".repeat(300),
       userId: "u".repeat(300),
     };
 
-    const metadata = buildObjectMetadata(PROFILES.orientation, longAuto, fields);
+    const metadata = buildObjectMetadata(PROFILES.project, longAuto, fields);
     const total = Object.entries(metadata ?? {}).reduce(
       (sum, [key, value]) => sum + key.length + value.length,
       0,
@@ -144,8 +136,8 @@ describe("buildObjectMetadata", () => {
   });
 
   it("returns undefined when the profile opts out", () => {
-    const profile = { ...PROFILES.orientation, attachAsObjectMetadata: false };
+    const profile = { ...PROFILES.project, attachAsObjectMetadata: false };
 
-    expect(buildObjectMetadata(profile, auto, { sessionId: "1" })).toBeUndefined();
+    expect(buildObjectMetadata(profile, auto, { pitchId: PITCH_ID })).toBeUndefined();
   });
 });

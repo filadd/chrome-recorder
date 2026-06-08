@@ -1,12 +1,12 @@
 import { S3Client } from "@aws-sdk/client-s3";
 
-import type { BucketRef } from "./profiles";
+import { PROFILE_IDS, type BucketRef } from "./profiles";
 
 // WHEN_REQUIRED stops the SDK from injecting CRC checksum headers into presigned
 // UploadPart URLs — the browser can't send them, and the signature would break.
-// The staging bucket's region — pinned independently of the runtime's AWS_REGION
-// so the Lambda can run in any region (e.g. sa-east-1) while still signing for the
-// us-east-1 bucket. A wrong region here breaks presigned PUTs (SigV4 host mismatch).
+// The bucket's region — pinned independently of the runtime's AWS_REGION so the
+// client always signs for the bucket's region. A wrong region here breaks
+// presigned PUTs (SigV4 host mismatch).
 export const s3 = new S3Client({
   region: process.env.S3_REGION ?? process.env.AWS_REGION ?? "us-east-1",
   requestChecksumCalculation: "WHEN_REQUIRED",
@@ -16,8 +16,7 @@ export const s3 = new S3Client({
 });
 
 const BUCKET_ENV: Record<BucketRef, string> = {
-  orientation: "S3_BUCKET_ORIENTATION",
-  project: "S3_BUCKET_PROJECT",
+  [PROFILE_IDS.project]: "S3_BUCKET_PROJECT",
 };
 
 // The client only ever names a logical bucket ref; the operator maps each ref to a

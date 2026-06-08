@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: filadd-chrome-recorder upload API — multipart signer (Hono on Lambda + Function URL)
+Description: filadd-chrome-recorder — upload signer + event-driven transcription pipeline (Hono on Lambda)
 
 Parameters:
   ApiToken:
@@ -10,22 +10,65 @@ Parameters:
   AllowedOrigins:
     Type: String
     Description: Comma-separated allowed origins, e.g. chrome-extension://hokpbkbpbggoeibolomknakfccmgoeae
-  StagingBucket:
+  ExtensionOrigin:
     Type: String
-    Default: filadd-chrome-recorder-prod
-    Description: Bucket recordings are uploaded to — referenced here, created/configured out of band
+    Default: chrome-extension://hokpbkbpbggoeibolomknakfccmgoeae
+    Description: The extension origin allowed to PUT parts directly to the bucket (bucket CORS)
+  RecordingsBucketName:
+    Type: String
+    Default: filadd-chrome-recorder
+    Description: Transient recordings bucket — created and managed by this stack (must be a free global name)
   BucketRegion:
     Type: String
     Default: sa-east-1
-    Description: Region the bucket lives in (may differ from the Lambda's region)
+    Description: Region the bucket lives in. Deploy this whole stack here so S3→Lambda events fire.
+  PipelineSecretArn:
+    Type: String
+    Description: Secrets Manager ARN of the JSON secret { deepgramApiKey, callbackToken, llmApiKey, notionApiKey }
+  LlmBaseUrl:
+    Type: String
+    Description: OpenAI-compatible base URL for the labeling/summary LLM (provider-agnostic)
+  LlmModel:
+    Type: String
+    Description: Model id for the labeling/summary LLM
 
 Globals:
   Function:
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     Timeout: 30
     MemorySize: 256
 
 Resources:
+  # Transient recordings bucket, created and owned by this stack. SAM wires the
+  # ObjectCreated → IngestFunction notification (don't hand-write it here, or the
+  # bucket↔function circular dependency returns). DeletionPolicy Retain so a stack
+  # delete never drops recordings or fails on a non-empty bucket.
+  RecordingsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref RecordingsBucketName
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - !Ref ExtensionOrigin
+            AllowedMethods:
+              - PUT
+            AllowedHeaders:
+              - "*"
+            ExposedHeaders:
+              - ETag
+      LifecycleConfiguration:
+        Rules:
+          - Id: abort-incomplete-mpu
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: expire-staged-audio
+            Status: Enabled
+            ExpirationInDays: 3
+
   UploadApiFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -45,24 +88,132 @@ Resources:
           API_TOKEN: !Ref ApiToken
           ALLOWED_ORIGINS: !Ref AllowedOrigins
           S3_REGION: !Ref BucketRegion
-          S3_BUCKET_ORIENTATION: !Ref StagingBucket
-          S3_BUCKET_PROJECT: !Ref StagingBucket
+          S3_BUCKET_PROJECT: !Ref RecordingsBucketName
       # No static AWS keys: the execution role below is the only credential, scoped
-      # to the multipart actions on the staging bucket. Presigned part URLs are
+      # to the multipart actions on the recordings bucket. Presigned part URLs are
       # signed with these role credentials, so the role must allow what the browser
       # will later PUT (s3:PutObject).
       Policies:
         - Statement:
-            - Sid: MultipartOnStagingBucket
+            - Sid: MultipartOnBucket
               Effect: Allow
               Action:
                 - s3:PutObject
                 - s3:AbortMultipartUpload
                 - s3:ListMultipartUploadParts
-              Resource: !Sub arn:aws:s3:::${StagingBucket}/*
+              Resource: !Sub arn:aws:s3:::${RecordingsBucketName}/*
       # CORS is handled in-app (Hono, origin allowlist from ALLOWED_ORIGINS) so the
       # behavior is identical locally and on Lambda; the Function URL only provides
       # the HTTPS endpoint. Auth is NONE here — the app does its own bearer check.
+      FunctionUrlConfig:
+        AuthType: NONE
+
+  # Dead-letter queue for ingest async-invocation failures (the only retryable
+  # piece without a poller — the callback's "retry" is Deepgram re-POSTing).
+  IngestDlq:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600 # 14 days
+
+  # Fired by S3 ObjectCreated (projects/*.webm). Presigns a GET, submits it to
+  # Deepgram async with a callback, tags the object submitted. Fast/sub-second.
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/ingest.ts
+        Target: node20
+        Sourcemap: false
+        Minify: false
+    Properties:
+      Handler: ingest.handler
+      CodeUri: .
+      Description: S3 ObjectCreated → submit the recording to Deepgram (async callback)
+      Environment:
+        Variables:
+          S3_REGION: !Ref BucketRegion
+          PIPELINE_SECRET_ARN: !Ref PipelineSecretArn
+          CALLBACK_URL: !GetAtt CallbackFunctionUrl.FunctionUrl
+          PRESIGN_GET_EXPIRES_SECONDS: "3600"
+      EventInvokeConfig:
+        MaximumRetryAttempts: 2
+        DestinationConfig:
+          OnFailure:
+            Type: SQS
+            Destination: !GetAtt IngestDlq.Arn
+      Events:
+        AudioUploaded:
+          Type: S3
+          Properties:
+            Bucket: !Ref RecordingsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: projects/
+                  - Name: suffix
+                    Value: .webm
+      Policies:
+        - Statement:
+            - Sid: ReadAndTagObjects
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectTagging
+                - s3:PutObjectTagging
+              Resource: !Sub arn:aws:s3:::${RecordingsBucketName}/*
+            - Sid: ReadPipelineSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref PipelineSecretArn
+            - Sid: SendToDlq
+              Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt IngestDlq.Arn
+
+  # Deepgram POSTs the transcript here. Validates the shared-secret token, formats
+  # the diarized transcript, runs the LLM + Notion routing, then deletes the audio.
+  # Longer timeout / more memory than the signer — it does the heavy lifting.
+  CallbackFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/callback.ts
+        Target: node20
+        Sourcemap: false
+        Minify: false
+    Properties:
+      Handler: callback.handler
+      CodeUri: .
+      Description: Deepgram callback → format, LLM, Notion, delete
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          S3_REGION: !Ref BucketRegion
+          S3_BUCKET_PROJECT: !Ref RecordingsBucketName
+          PIPELINE_SECRET_ARN: !Ref PipelineSecretArn
+          LLM_BASE_URL: !Ref LlmBaseUrl
+          LLM_MODEL: !Ref LlmModel
+      Policies:
+        - Statement:
+            - Sid: ReadTagDeleteObjects
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectTagging
+                - s3:PutObjectTagging
+                - s3:DeleteObject
+              Resource: !Sub arn:aws:s3:::${RecordingsBucketName}/*
+            - Sid: ReadPipelineSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref PipelineSecretArn
       FunctionUrlConfig:
         AuthType: NONE
 
@@ -70,3 +221,6 @@ Outputs:
   UploadApiUrl:
     Description: Function URL base — set as the extension's API_BASE_URL
     Value: !GetAtt UploadApiFunctionUrl.FunctionUrl
+  CallbackUrl:
+    Description: Deepgram callback Function URL (the IngestFunction passes it as ?callback=)
+    Value: !GetAtt CallbackFunctionUrl.FunctionUrl

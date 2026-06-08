@@ -53,17 +53,10 @@ describe("deriveView", () => {
     expect(view.canStart).toBe(true);
   });
 
-  it("requires a meet tab only for profiles that need one", () => {
-    const orientation = deriveView(snapshot("idle"), settings(), true, null);
-    expect(orientation.notOnMeet).toBe(true);
-    expect(orientation.ctaKind).toBe("meetFirst");
-    expect(orientation.canStart).toBe(false);
-
+  it("does not require a meet tab for the project profile", () => {
     const project = deriveView(
       snapshot("idle"),
       settings({
-        profileId: "project",
-        enabledProfileIds: ["orientation", "project"],
         meetingFields: {
           slug: null,
           values: { project: { pitchId: PITCH_ID, participants: "Ana, Beto" } },
@@ -76,32 +69,10 @@ describe("deriveView", () => {
     expect(project.ctaKind).toBe("start");
   });
 
-  it("blocks the orientation start until the session is set", () => {
-    const empty = deriveView(snapshot("idle"), settings(), true, "abc");
-    expect(empty.ctaKind).toBe("start");
-    expect(empty.canStart).toBe(false);
-
-    const filled = deriveView(
-      snapshot("idle"),
-      settings({
-        meetingFields: { slug: "abc", values: { orientation: { sessionId: "12345" } } },
-      }),
-      true,
-      "abc",
-    );
-    expect(filled.canStart).toBe(true);
-  });
-
   it("blocks the project start until every required field is filled", () => {
-    const base = {
-      profileId: "project" as const,
-      enabledProfileIds: ["orientation", "project"] as Settings["enabledProfileIds"],
-    };
-
     const partial = deriveView(
       snapshot("idle"),
       settings({
-        ...base,
         meetingFields: { slug: "abc", values: { project: { pitchId: PITCH_ID } } },
       }),
       true,
@@ -113,7 +84,6 @@ describe("deriveView", () => {
     const filled = deriveView(
       snapshot("idle"),
       settings({
-        ...base,
         meetingFields: {
           slug: "abc",
           values: { project: { pitchId: PITCH_ID, participants: "Ana, Beto" } },

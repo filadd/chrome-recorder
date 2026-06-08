@@ -27,7 +27,7 @@ export type MachineEvent =
 
 const initialContext: MachineContext = {
   slug: null,
-  profileId: "orientation",
+  profileId: "project",
   startedAt: null,
   partsDone: 0,
   micMuted: false,
