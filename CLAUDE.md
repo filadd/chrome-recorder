@@ -1,13 +1,13 @@
 # filadd-chrome-recorder
 
-Generic Chrome MV3 extension that records Google Meet calls (tab audio + microphone) and streams the recording to S3 via multipart upload while the call is in progress. S3 is **transient staging**: an n8n pipeline transcribes each object, routes the output per *profile* (`orientation` → transcription + summary onto the scheduler-api session; `project` → transcript + living context page under a Notion pitch), and deletes the audio. Successor to `lowcode-orientation-transcriptor-extension`.
+Generic Chrome MV3 extension that records Google Meet calls (tab audio + microphone) and streams the recording to S3 via multipart upload while the call is in progress. S3 is **transient**: an n8n pipeline transcribes each object, routes the output per *profile* (`orientation` → transcription + summary onto the scheduler-api session; `project` → transcript + living context page under a Notion pitch), and deletes the audio. Successor to `lowcode-orientation-transcriptor-extension`.
 
 Read `spec.md` for the full architecture, the research findings behind every major design decision (tabCapture invocation rules, leave-call detection strategy, audio-mixing graph, multipart upload constraints, persistence trade-offs), and the S3 bucket setup requirements.
 
 ## Repo layout
 
 - Extension at the root (Vite + @crxjs/vite-plugin + TypeScript + XState v5).
-- `api/` — standalone test/reference API (Node + Hono + AWS SDK v3) that issues presigned multipart URLs. Own `package.json`.
+- `api/` — the upload API (Node + Hono + AWS SDK v3) that issues presigned multipart URLs. `app.ts` is the shared app; `index.ts` serves it locally, `lambda.ts` wraps it for AWS Lambda (`hono/aws-lambda`). Deployed via SAM (`template.yaml`) behind a Function URL; the bucket is referenced, not managed. Own `package.json`.
 - `src/profiles/profiles.ts` and `api/src/profiles.ts` intentionally duplicate the profile table: the server is the trust boundary and must own its copy.
 
 ## Commands

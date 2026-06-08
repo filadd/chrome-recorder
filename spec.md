@@ -7,7 +7,7 @@ A Chrome extension plus processing pipeline that records Google Meet conversatio
 - **Simpler for the user**: no screen-share picker, no pinned recording tab. The user starts recording from the extension popup; it stops automatically when they leave the call. An informative pill (above the join button pre-call, next to the avatar in the in-call top bar) shows what's happening and points to the extension icon.
 - **More resilient**: the recording is streamed to S3 in parts *during* the call. If anything crashes mid-call, everything uploaded so far is recoverable; the old design lost the entire recording unless the final single-shot POST succeeded.
 - **Deterministic downstream**: each profile captures the association it needs (**session id**, **pitch id**) *at record time*, stamped as S3 object metadata. The old pipeline had to reconstruct "which orientation session is this?" after the fact via a Metabase time-window query and Calendly-redirect resolution — with a dedicated `SESSION_NOT_FOUND` failure state. That entire matching layer disappears.
-- **Audio-transient by design**: S3 is a staging queue, not an archive. The pipeline deletes each object after successful processing; a lifecycle rule expires stragglers after 3 days. Only transcripts and what's derived from them persist.
+- **Audio-transient by design**: S3 is a transient queue, not an archive. The pipeline deletes each object after successful processing; a lifecycle rule expires stragglers after 3 days. Only transcripts and what's derived from them persist.
 
 ## 2. Use cases / profiles
 
@@ -46,7 +46,7 @@ flowchart LR
     P -->|"GET session inbox (JWT)"| GW["Filadd gateway"]
     SW -->|"streamId + session"| OFF["Offscreen document<br/>capture + mix + record<br/>upload loop"]
     OFF -->|"PUT parts (presigned)"| S3["S3 (transient)"]
-    OFF -->|"create / parts / complete / abort"| API["Upload API<br/>(n8n webhook workflow;<br/>Hono app = local-dev ref)"]
+    OFF -->|"create / parts / complete / abort"| API["Upload API<br/>(AWS Lambda + Function URL,<br/>Hono via lambda adapter)"]
     API --> S3
     N8N["n8n pipeline<br/>transcribe + route + delete"] --> S3
     N8N --> SCHED["scheduler-api"]
@@ -167,25 +167,24 @@ All requests carry `Authorization: Bearer <token>` and `Content-Type: applicatio
 
 `bucketRef` is the logical profile bucket (`orientation` / `project`), resolved server-side to a real bucket — never a raw bucket name from the client.
 
-### 7.2 Production host: n8n webhook workflow
+### 7.2 Production host: AWS Lambda
 
-Production serves this contract from **n8n** (n8n.filadd.com), consolidating it with the processing pipeline (§8) so AWS lives in one set of n8n credentials and there is no separate Node service to operate. The standalone `api/` (Node + Hono + AWS SDK v3, timing-safe bearer compare, fail-closed) stays as the **local-dev reference and the executable definition of the contract** — its `keys.ts`/`profiles.ts` validation, key rendering and metadata building are the behavior the n8n workflow must reproduce. The server remains the trust boundary, so n8n owns its **own** copy of the profile table (same rule as the Hono/extension duplication in CLAUDE.md).
+The contract is served by a **credentialed signer** — the single component that holds AWS access. The extension never holds credentials: it PUTs each part **directly to S3** with a presigned URL (the high-volume path), and calls the signer only to create the upload, mint part URLs on demand, and finalize.
 
-Shape:
+- The signer owns the **trust boundary**: it validates fields, renders + sanitizes the key, and sets the immutable object metadata at `CreateMultipartUpload` (§2). The client only ever names a logical `bucketRef`.
+- `POST /uploads` and `POST /uploads/parts` must be server-side (validation + metadata; repeated on-demand signing). `complete` / `abort` / `list-parts` stay on the signer too, so S3's XML never leaks into the extension.
 
-- A **separate** workflow from the §8 processing pipeline (different trigger — Webhook vs Schedule — and lifecycle). One workflow with five **Webhook trigger** nodes, one per route; `POST /uploads` and `DELETE /uploads` share the `uploads` path and are disambiguated by method. The extension's `API_BASE_URL` becomes the n8n webhook base (e.g. `https://n8n.filadd.com/webhook`) so `/uploads`, `/uploads/parts`, … resolve.
-- **Control-plane calls** (create / complete / abort / list-parts) use n8n's native **AWS S3 node** (or HTTP Request + AWS creds) — these run server-side and need no presigning.
-- **Presign** (`/uploads/parts`) is the one step with no native n8n node: a **Code node** must mint the URL via `@aws-sdk/s3-request-presigner`'s `getSignedUrl(UploadPartCommand)`, reproducing `requestChecksumCalculation: "WHEN_REQUIRED"` (§4.4) or part PUT signatures break. Fallback if the SDK can't be loaded: hand-rolled SigV4 query signing with the built-in `crypto`.
-- **Auth/CORS**: each webhook validates the shared bearer token (n8n Header Auth credential or a guard expression) and returns the extension-origin CORS headers via "Respond to Webhook".
+It runs as a single **AWS Lambda behind a Function URL**, sitting next to the bucket it signs for:
 
-**Open questions to settle against the live instance (next step):**
+- `api/` (Node + Hono + AWS SDK v3) is the deployable, not just a reference: `app.ts` holds the routes, `index.ts` serves it locally via `@hono/node-server`, and `lambda.ts` wraps it for Lambda via Hono's built-in `hono/aws-lambda` adapter. `keys.ts` / `profiles.ts` stay the trust-boundary validation and the contract's source of truth.
+- Provisioned with **AWS SAM** (`api/template.yaml`, esbuild build): the Lambda, its execution role, and the Function URL. The bucket (§9) is *referenced*, not managed — a `sam delete` never touches it or its objects.
+- **No stored credentials**: the Lambda's **IAM execution role** grants only the multipart actions (`CreateMultipartUpload`, `UploadPart`, `CompleteMultipartUpload`, `AbortMultipartUpload`, `ListParts`) on the bucket. The S3Client picks up role credentials automatically — no access keys anywhere.
+- **CORS + TLS** come from the Function URL: `AllowOrigins` = the extension origin (§9). Function URL auth is `NONE`; the app does its own timing-safe **bearer-token** check (fail-closed).
+- Presigned part URLs are signed with the role's temporary credentials (≈1 h) — fine, since the client requests a fresh URL per part per attempt; `complete` / `abort` / `list-parts` are plain server-side S3 calls, so their lifetime is never bounded by URL expiry.
 
-- Does n8n.filadd.com allow external npm modules in Code nodes (`NODE_FUNCTION_ALLOW_EXTERNAL` covering `@aws-sdk/*`)? Decides SDK-presign vs hand-rolled SigV4.
-- Webhook path semantics: can multiple nodes share `uploads` across methods, and does the resulting public URL match `…/webhook/uploads(/…)` cleanly?
-- Where the AWS credential and the shared upload token live as n8n credentials.
-- Per-part webhook execution volume (a fresh URL per part per retry) vs n8n execution logging — whether to batch `partNumbers[]` from the client.
+The §8 processing pipeline is a separate concern and lives in n8n.
 
-Env for the reference `api/` (see `api/.env.example`): `API_TOKEN`, `ALLOWED_ORIGINS`, `AWS_REGION`, credentials, `S3_BUCKET_ORIENTATION|PROJECT` (typically both point at the **same transient bucket** — prefixes already separate the profiles), `PRESIGN_EXPIRES_SECONDS`.
+Env (local dev — `api/.env.example`): `API_TOKEN`, `ALLOWED_ORIGINS`, `AWS_REGION`, AWS credentials, `S3_BUCKET_ORIENTATION|PROJECT` (typically both the **same transient bucket** — prefixes already separate the profiles), `PRESIGN_EXPIRES_SECONDS`. In production the AWS credentials come from the Lambda execution role, not env.
 
 ## 8. Processing pipeline (n8n)
 
@@ -230,7 +229,9 @@ flowchart TD
    - Append a per-meeting entry: date, participants, summary, and the full labeled transcript in a toggle.
    - **Living context**: read the page's "Current context" section, have the LLM merge in the new conversation — topics discussed, decisions, open action items as checkboxes (closing ones that were resolved) — and rewrite the section. Speakers left generic are flagged here; renaming them by editing the Notion page *is* the labeling interface.
 
-## 9. S3 bucket setup (transient staging bucket)
+## 9. S3 bucket setup (transient bucket)
+
+The bucket lives in **`sa-east-1`**, co-located with the §7.2 Lambda so signing and control-plane calls stay in-region.
 
 The extension ID is pinned via the `key` field in `manifest.config.ts` (public half of the gitignored `extension-key.pem`), so the `chrome-extension://` origin below is stable across reinstalls and CORS can name it exactly.
 

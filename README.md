@@ -1,6 +1,6 @@
 # filadd-chrome-recorder
 
-Chrome extension that records Google Meet calls (tab audio + microphone) and streams them to S3 via multipart upload while the call is in progress. S3 is transient staging: an n8n pipeline transcribes each recording, routes the result per profile (**orientation** → scheduler session, **project** → Notion pitch page), and deletes the audio.
+Chrome extension that records Google Meet calls (tab audio + microphone) and streams them to S3 via multipart upload while the call is in progress. S3 is transient: an n8n pipeline transcribes each recording, routes the result per profile (**orientation** → scheduler session, **project** → Notion pitch page), and deletes the audio.
 
 See **[spec.md](./spec.md)** for the full architecture and design rationale, and **[CLAUDE.md](./CLAUDE.md)** for development conventions.
 
@@ -28,7 +28,7 @@ npm run dev            # http://localhost:8787
 
 ## S3 bucket requirements
 
-The staging bucket needs CORS with `ExposeHeaders: ["ETag"]`, a lifecycle rule aborting incomplete multipart uploads, and a 3-day expiration that guarantees audio is never retained — see [spec.md §9](./spec.md#9-s3-bucket-setup-transient-staging-bucket).
+The bucket needs CORS with `ExposeHeaders: ["ETag"]`, a lifecycle rule aborting incomplete multipart uploads, and a 3-day expiration that guarantees audio is never retained — see [spec.md §9](./spec.md#9-s3-bucket-setup-transient-bucket).
 
 ## API smoke test
 
