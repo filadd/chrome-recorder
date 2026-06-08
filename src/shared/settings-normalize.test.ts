@@ -57,10 +57,18 @@ describe("normalizeSettings", () => {
     expect(settings.profileId).toBe("project");
   });
 
-  it("defaults the pitch list and participants memory", () => {
+  it("defaults the pitch list", () => {
     const settings = normalizeSettings({ userId: "x@filadd.com" });
 
     expect(settings.pitches).toEqual([]);
-    expect(settings.participantsByPitch).toEqual({});
+  });
+
+  it("drops a lingering participants memory from stored settings", () => {
+    const settings = normalizeSettings({
+      userId: "x@filadd.com",
+      participantsByPitch: { abc: "Ana" },
+    } as unknown as Partial<Settings>);
+
+    expect("participantsByPitch" in settings).toBe(false);
   });
 });

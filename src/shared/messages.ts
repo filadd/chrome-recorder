@@ -25,7 +25,11 @@ export type SwMessage =
   | { target: "sw"; type: "upload-failed"; message: string }
   | { target: "sw"; type: "recover-retry" }
   | { target: "sw"; type: "recover-abort" }
-  | { target: "sw"; type: "dismiss-error" };
+  | { target: "sw"; type: "dismiss-error" }
+  // Refresh the cached pending-reviews queue + badge (popup poke on open).
+  | { target: "sw"; type: "poll-reviews" }
+  // Optimistically drop a just-submitted review from the cached queue + badge.
+  | { target: "sw"; type: "review-submitted"; key: string };
 
 export type OffscreenMessage =
   | { target: "offscreen"; type: "start-capture"; streamId: string; session: UploadSession }

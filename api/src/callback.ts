@@ -1,13 +1,21 @@
+import { randomUUID } from "node:crypto";
+
 import { DeleteObjectCommand, HeadObjectCommand, PutObjectTaggingCommand } from "@aws-sdk/client-s3";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 
 import { safeEquals } from "./auth";
-import { chat, parseJsonReply } from "./pipeline/llm";
-import { appendMeetingEntry, readLivingContext, writeLivingContext } from "./pipeline/notion";
+import { guessSpeakerNames } from "./pipeline/review-guess";
+import {
+  buildSpeakers,
+  linesToText,
+  toTranscriptLines,
+  type DeepgramResponse,
+  type ReviewArtifact,
+} from "./pipeline/review";
+import { putArtifact } from "./pipeline/review-store";
 import { profileForKey } from "./pipeline/routing";
-import { getPipelineSecret, type PipelineSecret } from "./pipeline/secrets";
-import { formatTranscript, type DeepgramResponse } from "./pipeline/transcript";
+import { getPipelineSecret } from "./pipeline/secrets";
 import { resolveBucket, s3 } from "./s3";
 
 const isNotFound = (error: unknown): boolean => {
@@ -17,66 +25,39 @@ const isNotFound = (error: unknown): boolean => {
   return name === "NotFound" || name === "NoSuchKey" || status === 404;
 };
 
-interface ProjectLlmResult {
-  labeledTranscript: string;
-  summary: string;
-  context: string;
-}
-
-const SYSTEM_PROMPT = [
-  "You process transcripts of pitch/project meetings.",
-  "Speakers are diarized as `[speaker N]`. Using the participant list and conversational cues",
-  "(introductions, who is addressed), relabel each `[speaker N]` with the participant's name;",
-  "leave a speaker as `[speaker N]` if you are not confident.",
-  "Then write a concise bullet summary, and merge the conversation into the running context:",
-  "topics, decisions, and open action items — closing items that were resolved.",
-  "Reply in the language of the transcript.",
-  'Respond with ONLY a JSON object: {"labeledTranscript": string, "summary": string, "context": string}.',
-].join(" ");
-
-const buildUserPrompt = (input: {
-  participants: string;
-  currentContext: string;
-  transcript: string;
-}): string =>
-  [
-    `Participants: ${input.participants || "(unknown)"}`,
-    "",
-    "Current context (may be empty):",
-    input.currentContext || "(none yet)",
-    "",
-    "Transcript:",
-    input.transcript,
-  ].join("\n");
-
-const routeProject = async (
-  secret: PipelineSecret,
+// Builds the review artifact from the Deepgram transcript + the object's metadata
+// contract. The expensive summary/context work is deferred to finalize, once a
+// human (or the sweeper) has confirmed who each speaker is.
+const buildArtifact = async (
+  llmApiKey: string,
   metadata: Record<string, string>,
-  transcript: string,
-): Promise<void> => {
+  response: DeepgramResponse,
+): Promise<ReviewArtifact> => {
   const pitchId = metadata.pitch_id;
 
   if (pitchId == null || pitchId === "") {
     throw new Error("project recording missing pitch_id metadata");
   }
 
-  const participants = metadata.participants ?? "";
-  const currentContext = await readLivingContext(secret.notionApiKey, pitchId);
+  const lines = toTranscriptLines(response);
 
-  const reply = await chat(secret.llmApiKey, [
-    { role: "system", content: SYSTEM_PROMPT },
-    { role: "user", content: buildUserPrompt({ participants, currentContext, transcript }) },
-  ]);
-  const result = parseJsonReply<ProjectLlmResult>(reply);
-
-  await appendMeetingEntry(secret.notionApiKey, pitchId, {
-    date: new Date().toISOString().slice(0, 10),
-    participants,
-    summary: result.summary,
-    transcript: result.labeledTranscript,
+  // Best-effort: a guess failure must not fail the callback (and trigger a
+  // Deepgram retry) — the human names everyone in the review regardless.
+  const guesses = await guessSpeakerNames(llmApiKey, linesToText(lines)).catch((error) => {
+    console.warn("[callback] speaker-name guess failed:", error);
+    return [];
   });
 
-  await writeLivingContext(secret.notionApiKey, pitchId, result.context);
+  return {
+    id: randomUUID(),
+    pitchId,
+    recordedBy: metadata.recorded_by ?? "",
+    meetSlug: metadata.meet_slug ?? "",
+    startedAt: metadata.started_at ?? "",
+    createdAt: new Date().toISOString(),
+    speakers: buildSpeakers(lines, guesses),
+    transcript: lines,
+  };
 };
 
 const app = new Hono();
@@ -122,7 +103,7 @@ app.post("/*", async (c) => {
   }
 
   // Weak lock — shrinks (not closes) the window for a duplicate Deepgram retry to
-  // double-write. Delete-on-success below is the real idempotency terminus.
+  // double-write. Delete-of-the-audio below is the real idempotency terminus.
   await s3.send(
     new PutObjectTaggingCommand({
       Bucket: bucket,
@@ -131,10 +112,16 @@ app.post("/*", async (c) => {
     }),
   );
 
-  const transcript = formatTranscript((await c.req.json()) as DeepgramResponse);
+  const artifact = await buildArtifact(
+    secret.llmApiKey,
+    metadata,
+    (await c.req.json()) as DeepgramResponse,
+  );
 
-  await routeProject(secret, metadata, transcript);
-
+  // Persist the review, then drop the audio: the transcript now lives in the
+  // artifact, so the 3-day transient-audio promise is kept without waiting for
+  // the human review.
+  await putArtifact(bucket, artifact);
   await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 
   return c.json({ ok: true });

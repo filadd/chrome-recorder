@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { getProfile } from "../../profiles/profiles";
 import { useMicGranted } from "../../shared/hooks/useMicGranted";
 import { usePendingUpload } from "../../shared/hooks/usePendingUpload";
+import { useReviewQueue } from "../../shared/hooks/useReviewQueue";
 import { useSettings } from "../../shared/hooks/useSettings";
 import { useSnapshot } from "../../shared/hooks/useSnapshot";
 import {
@@ -22,6 +23,7 @@ import { ProfileFieldsForm } from "./ProfileFieldsForm";
 import { ProfileTabs } from "./ProfileTabs";
 import { RecordingCard } from "./RecordingCard";
 import { RecoveryBanner } from "./RecoveryBanner";
+import { ReviewInbox } from "./ReviewInbox";
 import { SettingsOverlay } from "./SettingsOverlay";
 import { StatusCard } from "./StatusCard";
 
@@ -32,7 +34,14 @@ export const Popup = () => {
   const { settings, loaded: settingsLoaded, update } = useSettings();
   const [micGranted, micLoaded] = useMicGranted();
   const [pending, pendingLoaded] = usePendingUpload();
+  const [reviewQueue] = useReviewQueue();
   const { slug, loaded: tabLoaded } = useActiveMeetTab();
+
+  // Poke a fresh poll on open so the inbox/badge reflect reality without waiting
+  // for the next alarm tick.
+  useEffect(() => {
+    sendMessage({ target: "sw", type: "poll-reviews" });
+  }, []);
 
   const loaded = snapshotLoaded && settingsLoaded && micLoaded && pendingLoaded && tabLoaded;
 
@@ -130,6 +139,10 @@ export const Popup = () => {
       {showRecovery ? <RecoveryBanner /> : null}
 
       <main className="popup-body">
+        {reviewQueue.items.length > 0 ? (
+          <ReviewInbox items={reviewQueue.items} pitches={settings.pitches} />
+        ) : null}
+
         {view.busy ? (
           <RecordingCard
             snapshot={snapshot}

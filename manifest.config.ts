@@ -20,7 +20,7 @@ export default defineManifest({
     128: "icons/icon128.png",
   },
 
-  permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab"],
+  permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab", "alarms"],
   host_permissions: [
     "http://localhost/*",
     "https://*.amazonaws.com/*",

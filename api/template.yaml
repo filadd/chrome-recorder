@@ -31,6 +31,10 @@ Parameters:
   LlmModel:
     Type: String
     Description: Model id for the labeling/summary LLM
+  ReviewStaleDays:
+    Type: Number
+    Default: 7
+    Description: Sweeper backstop — best-guess finalize reviews left unreviewed this many days
 
 Globals:
   Function:
@@ -65,9 +69,17 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
+          # Audio is transient: expire raw recordings fast. Review artifacts live
+          # under a separate prefix with a longer backstop so a pending review
+          # isn't force-deleted mid-window (the sweeper finalizes before then).
           - Id: expire-staged-audio
             Status: Enabled
+            Prefix: projects/
             ExpirationInDays: 3
+          - Id: expire-reviews
+            Status: Enabled
+            Prefix: reviews/
+            ExpirationInDays: 30
 
   UploadApiFunction:
     Type: AWS::Serverless::Function
@@ -89,6 +101,7 @@ Resources:
           ALLOWED_ORIGINS: !Ref AllowedOrigins
           S3_REGION: !Ref BucketRegion
           S3_BUCKET_PROJECT: !Ref RecordingsBucketName
+          FINALIZE_FUNCTION_NAME: !Ref FinalizeFunction
       # No static AWS keys: the execution role below is the only credential, scoped
       # to the multipart actions on the recordings bucket. Presigned part URLs are
       # signed with these role credentials, so the role must allow what the browser
@@ -102,6 +115,23 @@ Resources:
                 - s3:AbortMultipartUpload
                 - s3:ListMultipartUploadParts
               Resource: !Sub arn:aws:s3:::${RecordingsBucketName}/*
+            # Review queue: list the user's pending reviews and read one artifact.
+            - Sid: ReadReviewArtifacts
+              Effect: Allow
+              Action: s3:GetObject
+              Resource: !Sub arn:aws:s3:::${RecordingsBucketName}/reviews/*
+            - Sid: ListReviewArtifacts
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${RecordingsBucketName}
+              Condition:
+                StringLike:
+                  s3:prefix: reviews/*
+            # Submitting a review async-invokes the heavy Finalize lambda.
+            - Sid: InvokeFinalize
+              Effect: Allow
+              Action: lambda:InvokeFunction
+              Resource: !GetAtt FinalizeFunction.Arn
       # CORS is handled in-app (Hono, origin allowlist from ALLOWED_ORIGINS) so the
       # behavior is identical locally and on Lambda; the Function URL only provides
       # the HTTPS endpoint. Auth is NONE here — the app does its own bearer check.
@@ -175,8 +205,9 @@ Resources:
               Resource: !GetAtt IngestDlq.Arn
 
   # Deepgram POSTs the transcript here. Validates the shared-secret token, formats
-  # the diarized transcript, runs the LLM + Notion routing, then deletes the audio.
-  # Longer timeout / more memory than the signer — it does the heavy lifting.
+  # the diarized transcript, runs the cheap speaker-name guess, writes the review
+  # artifact (reviews/*.json), then deletes the audio. The heavy summary/context +
+  # Notion work is deferred to FinalizeFunction once a human confirms the names.
   CallbackFunction:
     Type: AWS::Serverless::Function
     Metadata:
@@ -190,7 +221,7 @@ Resources:
     Properties:
       Handler: callback.handler
       CodeUri: .
-      Description: Deepgram callback → format, LLM, Notion, delete
+      Description: Deepgram callback → format, guess names, write review artifact, delete audio
       Timeout: 120
       MemorySize: 512
       Environment:
@@ -202,12 +233,14 @@ Resources:
           LLM_MODEL: !Ref LlmModel
       Policies:
         - Statement:
-            - Sid: ReadTagDeleteObjects
+            # Reads/tags/deletes the audio object and writes the review artifact.
+            - Sid: ReadTagWriteDeleteObjects
               Effect: Allow
               Action:
                 - s3:GetObject
                 - s3:GetObjectTagging
                 - s3:PutObjectTagging
+                - s3:PutObject
                 - s3:DeleteObject
               Resource: !Sub arn:aws:s3:::${RecordingsBucketName}/*
             - Sid: ReadPipelineSecret
@@ -216,6 +249,97 @@ Resources:
               Resource: !Ref PipelineSecretArn
       FunctionUrlConfig:
         AuthType: NONE
+
+  # Invoked (async, "Event") by the upload API when a human submits speaker names,
+  # or in-process by the sweeper with best-guess labels. Applies the naming, runs
+  # the summary/context LLM pass, writes Notion, and deletes the review artifact.
+  FinalizeFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/finalize.ts
+        Target: node20
+        Sourcemap: false
+        Minify: false
+    Properties:
+      Handler: finalize.handler
+      CodeUri: .
+      Description: Apply speaker naming → summary/context LLM → Notion → delete the review artifact
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          S3_REGION: !Ref BucketRegion
+          S3_BUCKET_PROJECT: !Ref RecordingsBucketName
+          PIPELINE_SECRET_ARN: !Ref PipelineSecretArn
+          LLM_BASE_URL: !Ref LlmBaseUrl
+          LLM_MODEL: !Ref LlmModel
+      Policies:
+        - Statement:
+            - Sid: ReadDeleteReviewArtifacts
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:DeleteObject
+              Resource: !Sub arn:aws:s3:::${RecordingsBucketName}/reviews/*
+            - Sid: ReadPipelineSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref PipelineSecretArn
+
+  # Daily backstop: best-guess-finalizes review artifacts left unreviewed past
+  # REVIEW_STALE_DAYS, so a forgotten review still reaches Notion and the queue
+  # self-cleans. Runs the finalize logic in-process (hence the same IAM + secrets).
+  SweeperFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/sweeper.ts
+        Target: node20
+        Sourcemap: false
+        Minify: false
+    Properties:
+      Handler: sweeper.handler
+      CodeUri: .
+      Description: Daily best-guess finalize for reviews older than REVIEW_STALE_DAYS
+      Timeout: 300
+      MemorySize: 512
+      Environment:
+        Variables:
+          S3_REGION: !Ref BucketRegion
+          S3_BUCKET_PROJECT: !Ref RecordingsBucketName
+          PIPELINE_SECRET_ARN: !Ref PipelineSecretArn
+          LLM_BASE_URL: !Ref LlmBaseUrl
+          LLM_MODEL: !Ref LlmModel
+          REVIEW_STALE_DAYS: !Ref ReviewStaleDays
+      Events:
+        DailySweep:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 day)
+      Policies:
+        - Statement:
+            - Sid: ListReviewArtifacts
+              Effect: Allow
+              Action: s3:ListBucket
+              Resource: !Sub arn:aws:s3:::${RecordingsBucketName}
+              Condition:
+                StringLike:
+                  s3:prefix: reviews/*
+            - Sid: ReadDeleteReviewArtifacts
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:DeleteObject
+              Resource: !Sub arn:aws:s3:::${RecordingsBucketName}/reviews/*
+            - Sid: ReadPipelineSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref PipelineSecretArn
 
 Outputs:
   UploadApiUrl:

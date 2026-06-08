@@ -11,8 +11,11 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 
 import { bearerAuth } from "./auth";
+import { invokeFinalize } from "./finalize-invoke";
 import { buildObjectMetadata, renderKey } from "./keys";
-import { getProfile, PROFILES, type BucketRef } from "./profiles";
+import type { SpeakerNaming } from "./pipeline/review";
+import { getArtifact, listReviews } from "./pipeline/review-store";
+import { getProfile, PROFILE_IDS, PROFILES, type BucketRef } from "./profiles";
 import { presignExpiresSeconds, resolveBucket, s3 } from "./s3";
 
 export const app = new Hono();
@@ -20,14 +23,17 @@ export const app = new Hono();
 app.use(logger());
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "").split(",").filter(Boolean);
+const corsForExtension = cors({ origin: allowedOrigins, allowHeaders: ["Authorization", "Content-Type"] });
 
-app.use(
-  "/uploads/*",
-  cors({ origin: allowedOrigins, allowHeaders: ["Authorization", "Content-Type"] }),
-);
-app.use("/uploads", cors({ origin: allowedOrigins, allowHeaders: ["Authorization", "Content-Type"] }));
+app.use("/uploads/*", corsForExtension);
+app.use("/uploads", corsForExtension);
 app.use("/uploads/*", bearerAuth);
 app.use("/uploads", bearerAuth);
+
+app.use("/reviews/*", corsForExtension);
+app.use("/reviews", corsForExtension);
+app.use("/reviews/*", bearerAuth);
+app.use("/reviews", bearerAuth);
 
 const isBucketRef = (value: unknown): value is BucketRef =>
   typeof value === "string" && value in PROFILES;
@@ -185,6 +191,51 @@ app.delete("/uploads", async (c) => {
   );
 
   return c.json({ aborted: true });
+});
+
+// ── review queue ──
+// The reviews/ artifacts share the project bucket. Auth is the same shared bearer
+// token, so `recordedBy` is a trusted query param (matches the upload trust model).
+
+const reviewsBucket = (): string => resolveBucket(PROFILE_IDS.project);
+
+const isReviewKey = (value: unknown): value is string =>
+  typeof value === "string" && value.startsWith("reviews/") && !value.includes("..");
+
+app.get("/reviews", async (c) => {
+  const recordedBy = c.req.query("recordedBy");
+
+  if (recordedBy == null || recordedBy === "") {
+    return c.json({ error: "Missing recordedBy" }, 400);
+  }
+
+  return c.json({ reviews: await listReviews(reviewsBucket(), recordedBy) });
+});
+
+app.get("/reviews/item", async (c) => {
+  const key = c.req.query("key");
+
+  if (!isReviewKey(key)) {
+    return c.json({ error: "Invalid review key" }, 400);
+  }
+
+  try {
+    return c.json(await getArtifact(reviewsBucket(), key));
+  } catch (error) {
+    return c.json({ error: String(error) }, 404);
+  }
+});
+
+app.post("/reviews/finalize", async (c) => {
+  const body = await c.req.json();
+
+  if (!isReviewKey(body.key)) {
+    return c.json({ error: "Invalid review key" }, 400);
+  }
+
+  await invokeFinalize({ key: body.key, naming: body.naming as SpeakerNaming });
+
+  return c.json({ accepted: true }, 202);
 });
 
 app.onError((error, c) => c.json({ error: String(error) }, 500));

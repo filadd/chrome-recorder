@@ -17,13 +17,6 @@ export const PROFILES: Record<ProfileId, RecordingProfile> = {
         type: "select",
         required: true,
       },
-      {
-        key: "participants",
-        labelKey: "field_participants",
-        placeholderKey: "field_participants_ph",
-        type: "text",
-        required: true,
-      },
     ],
     attachAsObjectMetadata: true,
     contentType: "audio/webm",

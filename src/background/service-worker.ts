@@ -22,6 +22,13 @@ import { createUpload } from "../upload/api-client";
 import { resolveAutoFields } from "./auto-fields";
 import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen-host";
 import { abortPendingUpload, retryPendingUpload } from "./recovery";
+import {
+  dropReview,
+  ensureSlowPolling,
+  onReviewAlarm,
+  pollReviews,
+  startFastPolling,
+} from "./review-poll";
 
 type RecorderActor = Actor<typeof recorderMachine>;
 
@@ -231,6 +238,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         actor.send({ type: "UPLOAD_FINISHED" });
         await clearPendingUpload();
         await finishSession(actor);
+        // A review for this recording is now incoming — poll hard for a while.
+        await startFastPolling();
         return undefined;
 
       case "upload-failed":
@@ -261,6 +270,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case "dismiss-error":
         actor.send({ type: "RESET" });
         return undefined;
+
+      case "poll-reviews":
+        return { count: await pollReviews() };
+
+      case "review-submitted":
+        await dropReview(message.key);
+        return undefined;
     }
   };
 
@@ -288,13 +304,19 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   }
 });
 
+chrome.alarms.onAlarm.addListener(onReviewAlarm);
+
 // storage.session is gone after a browser restart, so the machine rehydrates fresh;
 // the UI snapshot in storage.local must be reset to match. A pending upload ledger
 // in storage.local survives and is surfaced by the popup for recovery.
 chrome.runtime.onStartup.addListener(() => {
   setSnapshot(DEFAULT_SNAPSHOT);
+  ensureSlowPolling();
+  pollReviews();
 });
 
 chrome.runtime.onInstalled.addListener(() => {
   setSnapshot(DEFAULT_SNAPSHOT);
+  ensureSlowPolling();
+  pollReviews();
 });

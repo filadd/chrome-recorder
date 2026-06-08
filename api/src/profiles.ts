@@ -29,7 +29,7 @@ export const PROFILES: Record<ProfileId, ServerProfile> = {
     bucket: PROFILE_IDS.project,
     keyTemplate: "projects/{timestamp}-{uuid}.webm",
     autoFields: ["meetSlug", "timestamp", "userId", "uuid"],
-    requiredFields: ["pitchId", "participants"],
+    requiredFields: ["pitchId"],
     optionalFields: [],
     // Notion page id: 32 hex chars (uuid with the dashes stripped client-side).
     fieldPatterns: { pitchId: /^[0-9a-f]{32}$/ },

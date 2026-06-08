@@ -13,9 +13,8 @@ export const clearMeetingFields = (settings: Settings): Settings => ({
   meetingFields: { ...settings.meetingFields, values: {} },
 });
 
-// Single entry point for popup field edits: besides storing the value, it keeps
-// the per-pitch participants memory in sync — picking a pitch recalls who was in
-// its last recording, and typing participants updates that memory.
+// Single entry point for popup field edits: stores the value under the active
+// meeting's profile bucket.
 export const applyFieldChange = (
   settings: Settings,
   profileId: ProfileId,
@@ -23,23 +22,12 @@ export const applyFieldChange = (
   value: string,
 ): Settings => {
   const current = settings.meetingFields.values[profileId] ?? {};
-  const values = { ...current, [key]: value };
-  let participantsByPitch = settings.participantsByPitch;
-
-  if (profileId === "project" && key === "pitchId") {
-    values.participants = settings.participantsByPitch[value] ?? values.participants ?? "";
-  }
-
-  if (profileId === "project" && key === "participants" && (current.pitchId ?? "") !== "") {
-    participantsByPitch = { ...participantsByPitch, [current.pitchId]: value };
-  }
 
   return {
     ...settings,
-    participantsByPitch,
     meetingFields: {
       ...settings.meetingFields,
-      values: { ...settings.meetingFields.values, [profileId]: values },
+      values: { ...settings.meetingFields.values, [profileId]: { ...current, [key]: value } },
     },
   };
 };

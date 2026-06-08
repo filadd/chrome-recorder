@@ -1,0 +1,172 @@
+body {
+  margin: 0;
+  font-family: "Google Sans", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #1a1a1a;
+  background: #f0ede8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 28px 20px 40px;
+}
+
+.review-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.badge {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.review-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #5a5a5a;
+}
+
+.review-note.err {
+  color: #c43434;
+}
+
+.review-note.ok {
+  color: #2e9e52;
+  font-weight: 500;
+}
+
+.speaker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1.5px solid #dedad4;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.speaker.ignored {
+  opacity: 0.55;
+}
+
+.speaker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.speaker-tag {
+  font-weight: 600;
+}
+
+.speaker-guess {
+  font-size: 11px;
+  color: #8a8a8a;
+}
+
+.samples {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+  color: #4a4a4a;
+}
+
+.samples li {
+  margin-bottom: 3px;
+}
+
+.speaker-name {
+  padding: 8px 10px;
+  border: 1.5px solid #c8c4bc;
+  border-radius: 6px;
+  font: inherit;
+  outline: none;
+}
+
+.speaker-name:focus {
+  border-color: #1a1a1a;
+}
+
+.speaker-name:disabled {
+  background: #f3f1ed;
+  color: #9a9a9a;
+}
+
+.speaker-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.speaker-merge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #5a5a5a;
+}
+
+.speaker-merge select {
+  padding: 4px 6px;
+  border: 1.5px solid #c8c4bc;
+  border-radius: 5px;
+  font: inherit;
+  font-size: 11px;
+}
+
+.speaker-ignore {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #5a5a5a;
+}
+
+.review-submit {
+  align-self: flex-start;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.review-submit:hover:not(:disabled) {
+  background: #2e2e2e;
+}
+
+.review-submit:disabled {
+  background: #d4d0ca;
+  color: #9a9794;
+  cursor: not-allowed;
+}

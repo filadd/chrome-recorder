@@ -41,42 +41,15 @@ describe("clearMeetingFields", () => {
 
 describe("applyFieldChange", () => {
   it("stores the value under the profile", () => {
-    const settings = applyFieldChange(DEFAULT_SETTINGS, "project", "participants", "Ana, Beto");
+    const settings = applyFieldChange(DEFAULT_SETTINGS, "project", "pitchId", PITCH_A);
 
-    expect(settings.meetingFields.values.project).toEqual({ participants: "Ana, Beto" });
+    expect(settings.meetingFields.values.project).toEqual({ pitchId: PITCH_A });
   });
 
-  it("prefills participants from the pitch memory when a pitch is picked", () => {
-    const settings = applyFieldChange(
-      { ...DEFAULT_SETTINGS, participantsByPitch: { [PITCH_A]: "Ana, Beto" } },
-      "project",
-      "pitchId",
-      PITCH_A,
-    );
-
-    expect(settings.meetingFields.values.project).toEqual({
-      pitchId: PITCH_A,
-      participants: "Ana, Beto",
-    });
-  });
-
-  it("keeps typed participants when the picked pitch has no memory", () => {
-    const base = applyFieldChange(DEFAULT_SETTINGS, "project", "participants", "Carla");
+  it("merges with previously typed values for the same profile", () => {
+    const base = applyFieldChange(DEFAULT_SETTINGS, "project", "pitchId", PITCH_A);
     const settings = applyFieldChange(base, "project", "pitchId", PITCH_B);
 
-    expect(settings.meetingFields.values.project?.participants).toBe("Carla");
-  });
-
-  it("remembers participants for the selected pitch", () => {
-    const base = applyFieldChange(DEFAULT_SETTINGS, "project", "pitchId", PITCH_A);
-    const settings = applyFieldChange(base, "project", "participants", "Ana, Beto");
-
-    expect(settings.participantsByPitch[PITCH_A]).toBe("Ana, Beto");
-  });
-
-  it("does not remember participants without a pitch selected", () => {
-    const settings = applyFieldChange(DEFAULT_SETTINGS, "project", "participants", "Ana");
-
-    expect(settings.participantsByPitch).toEqual({});
+    expect(settings.meetingFields.values.project).toEqual({ pitchId: PITCH_B });
   });
 });

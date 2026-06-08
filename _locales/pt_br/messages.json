@@ -83,12 +83,6 @@
   "pitch_list_empty": {
     "message": "Adicione pitches nas configurações (⚙) para gravar."
   },
-  "field_participants": {
-    "message": "Participantes"
-  },
-  "field_participants_ph": {
-    "message": "Nomes separados por vírgula"
-  },
   "settings_pitches_label": {
     "message": "Pitches (Notion)"
   },
@@ -192,5 +186,68 @@
         "content": "$1"
       }
     }
+  },
+  "inbox_title": {
+    "message": "Gravações para nomear ($COUNT$)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "inbox_open": {
+    "message": "Nomear participantes"
+  },
+  "review_unknown_pitch": {
+    "message": "Pitch desconhecido"
+  },
+  "review_page_title": {
+    "message": "Atribuir nomes aos participantes"
+  },
+  "review_intro": {
+    "message": "Nomeie cada participante pelo que disse. Deixe o nome em branco para mantê-lo genérico."
+  },
+  "review_loading": {
+    "message": "Carregando a transcrição…"
+  },
+  "review_error": {
+    "message": "Não foi possível carregar esta revisão."
+  },
+  "review_done": {
+    "message": "Salvo — processando a transcrição."
+  },
+  "review_speaker": {
+    "message": "Participante $N$",
+    "placeholders": {
+      "n": {
+        "content": "$1"
+      }
+    }
+  },
+  "review_guess": {
+    "message": "sugerido: $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "review_name_ph": {
+    "message": "Nome"
+  },
+  "review_merge": {
+    "message": "Mesma pessoa que"
+  },
+  "review_merge_none": {
+    "message": "—"
+  },
+  "review_ignore": {
+    "message": "Ignorar"
+  },
+  "review_submit": {
+    "message": "Salvar nomes"
+  },
+  "review_submitting": {
+    "message": "Salvando…"
   }
 }

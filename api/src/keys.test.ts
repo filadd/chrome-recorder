@@ -35,7 +35,7 @@ describe("renderKey", () => {
         userId: "ana@filadd.com",
         uuid: "0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
       },
-      { pitchId: PITCH_ID, participants: "Ana, Beto" },
+      { pitchId: PITCH_ID },
     );
 
     expect(key).toBe("projects/20260607T150200Z-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0.webm");
@@ -45,7 +45,7 @@ describe("renderKey", () => {
     const key = renderKey(
       PROFILES.project,
       { meetSlug: "abc", timestamp: "t1", userId: "u", uuid: "u1" },
-      { pitchId: PITCH_ID, participants: "Ana", timestamp: "evil" },
+      { pitchId: PITCH_ID, timestamp: "evil" },
     );
 
     expect(key).toContain("t1");
@@ -60,7 +60,7 @@ describe("renderKey", () => {
     const key = renderKey(
       PROFILES.project,
       { meetSlug: "abc", timestamp: "t", userId: "u", uuid: "../../12345" },
-      { pitchId: PITCH_ID, participants: "Ana" },
+      { pitchId: PITCH_ID },
     );
 
     expect(key.split("/").every((segment) => segment !== ".." && segment !== "")).toBe(true);
@@ -77,7 +77,6 @@ describe("buildObjectMetadata", () => {
   it("maps contract fields to their snake_case pipeline keys", () => {
     const metadata = buildObjectMetadata(PROFILES.project, auto, {
       pitchId: PITCH_ID,
-      participants: "Ana, Beto",
     });
 
     expect(metadata).toEqual({
@@ -85,7 +84,6 @@ describe("buildObjectMetadata", () => {
       started_at: "20260607T150200Z",
       recorded_by: "ana@filadd.com",
       pitch_id: PITCH_ID,
-      participants: "Ana, Beto",
     });
   });
 
@@ -93,7 +91,7 @@ describe("buildObjectMetadata", () => {
     const metadata = buildObjectMetadata(
       PROFILES.project,
       { ...auto, uuid: "0f1e2d3c" },
-      { pitchId: PITCH_ID, participants: "Ana", extra: "nope" },
+      { pitchId: PITCH_ID, extra: "nope" },
     );
 
     expect(metadata).not.toHaveProperty("uuid");
@@ -101,32 +99,29 @@ describe("buildObjectMetadata", () => {
   });
 
   it("folds diacritics and strips non-ASCII", () => {
-    const metadata = buildObjectMetadata(PROFILES.project, auto, {
+    const metadata = buildObjectMetadata(PROFILES.project, { ...auto, userId: "José Pérez" }, {
       pitchId: PITCH_ID,
-      participants: "José Pérez, 田中, Ñandú",
     });
 
-    expect(metadata?.participants).toBe("Jose Perez, , Nandu");
+    expect(metadata?.recorded_by).toBe("Jose Perez");
   });
 
   it("truncates each value to 256 characters", () => {
-    const metadata = buildObjectMetadata(PROFILES.project, auto, {
+    const metadata = buildObjectMetadata(PROFILES.project, { ...auto, userId: "x".repeat(1000) }, {
       pitchId: PITCH_ID,
-      participants: "x".repeat(1000),
     });
 
-    expect(metadata?.participants).toHaveLength(256);
+    expect(metadata?.recorded_by).toHaveLength(256);
   });
 
   it("enforces the 2KB aggregate cap", () => {
-    const fields = { pitchId: PITCH_ID, participants: "p".repeat(2000) };
     const longAuto = {
       meetSlug: "m".repeat(300),
       timestamp: "t".repeat(300),
-      userId: "u".repeat(300),
+      userId: "u".repeat(2000),
     };
 
-    const metadata = buildObjectMetadata(PROFILES.project, longAuto, fields);
+    const metadata = buildObjectMetadata(PROFILES.project, longAuto, { pitchId: PITCH_ID });
     const total = Object.entries(metadata ?? {}).reduce(
       (sum, [key, value]) => sum + key.length + value.length,
       0,

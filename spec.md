@@ -15,7 +15,9 @@ A **profile** describes what identifies a recording, where the audio stages, and
 
 | Profile | Purpose | Key template | Auto-resolved | User-provided | Pipeline destination |
 |---|---|---|---|---|---|
-| `project` | Pitch/project conversations | `projects/{timestamp}-{uuid}.webm` | meetSlug, timestamp, userId, uuid | `pitchId` (required — select over the settings-managed pitch list), `participants` (required — comma-separated names, prefilled from the previous recording of the same pitch) | Transcript + living context page under the Notion pitch |
+| `project` | Pitch/project conversations | `projects/{timestamp}-{uuid}.webm` | meetSlug, timestamp, userId, uuid | `pitchId` (required — select over the settings-managed pitch list) | Transcript + living context page under the Notion pitch |
+
+Speaker **names are not entered at record time** — they're assigned *after* transcription in the in-extension review (§7.1), where the diarized sample quotes make "who is this?" answerable. So `project` asks only for the pitch at record time.
 
 `project` is the only profile that ships today. The machinery stays generic (the profile table is a const map, the type derives from it, the popup/settings loop over it) so another profile is a table entry, not a refactor.
 
@@ -26,9 +28,8 @@ Keys are transient and don't encode browse structure (no per-session folders) �
 | Metadata key | project | Source |
 |---|---|---|
 | `pitch_id` | ✓ | `pitchId` field (Notion page id) |
-| `participants` | ✓ | `participants` field |
 | `meet_slug` | ✓ | auto |
-| `recorded_by` | ✓ | auto (`userId` setting) |
+| `recorded_by` | ✓ | auto (`userId` setting) — also the review-queue partition key |
 | `started_at` | ✓ | auto (`timestamp`) |
 
 Constraints (AWS): metadata is set once at `CreateMultipartUpload` and is immutable afterwards; the total UTF-8 size of all keys+values is capped at 2 KB; values must stay US-ASCII or S3 RFC-2047-mangles them on read. The API therefore maps field names to these snake_case keys, strips non-ASCII, truncates each value to 256 chars, and enforces the 2 KB aggregate cap. Mutable per-object state (retry counts, failure markers) uses **object tags** instead — see §7.
@@ -47,18 +48,24 @@ flowchart LR
     API --> S3
     S3 -->|"ObjectCreated projects/*.webm"| ING["Ingest Lambda<br/>presign GET + submit"]
     ING -->|"async + callback URL"| DG["Deepgram nova-3"]
-    DG -->|"transcript POST"| CB["Callback Lambda<br/>format + LLM + Notion + delete"]
-    CB --> NOTION["Notion (pitch)"]
-    CB -->|"DeleteObject"| S3
+    DG -->|"transcript POST"| CB["Callback Lambda<br/>format + guess names<br/>write review + delete audio"]
+    CB -->|"reviews/*.json"| S3
+    RV["Review page (React)<br/>name / merge / ignore"] -->|"GET/POST /reviews"| API
+    P -->|"badge + inbox"| RV
+    API -->|"async invoke (submit)"| FIN["Finalize Lambda<br/>apply names + LLM + Notion"]
+    SW2["Sweeper Lambda<br/>(daily, best-guess)"] --> FIN
+    FIN --> NOTION["Notion (pitch)"]
+    FIN -->|"DeleteObject review"| S3
 ```
 
 ### Context responsibilities
 
-- **Service worker** (`src/background/service-worker.ts`): hosts the XState actor, handles invocation surfaces (action click, keyboard command), calls `tabCapture.getMediaStreamId`, manages the offscreen document lifecycle, watches `tabs.onRemoved`/`onUpdated` as the auto-stop backstop, and runs crash recovery on startup. Holds **no media handles** and does **no uploads**.
+- **Service worker** (`src/background/service-worker.ts`): hosts the XState actor, handles invocation surfaces (action click, keyboard command), calls `tabCapture.getMediaStreamId`, manages the offscreen document lifecycle, watches `tabs.onRemoved`/`onUpdated` as the auto-stop backstop, runs crash recovery on startup, and **polls the review queue** (`chrome.alarms`: a fast burst after a recording finishes, then a daily cadence; also on popup open), mirroring it to `chrome.storage.local` and the toolbar badge. Holds **no media handles** and does **no uploads**.
 - **Offscreen document** (`src/offscreen/`): the only context allowed to hold MediaStreams long-term. Captures tab audio + mic, mixes, records, buffers, and uploads parts. Created with reason `USER_MEDIA` (no lifetime cap while active); explicitly closed after finalization.
 - **Content script** (`src/content/`): detects Meet call pages, injects the Shadow-DOM overlay (toggle, recording indicator, coachmark), detects call end.
-- **Popup** (`src/popup/`): profile picker, per-profile field form (pitch select + participants), userId setting, pitch-list management in settings, status mirror, recovery affordances.
+- **Popup** (`src/popup/`): profile picker, per-profile field form (pitch select), userId setting, pitch-list management in settings, status mirror, recovery affordances, and the **pending-reviews inbox** (rows that open the review page).
 - **Permission page** (`src/permission/`): a visible page whose only job is the one-time mic `getUserMedia` grant — offscreen documents cannot show permission prompts.
+- **Review page** (`src/review/`): a visible React page (opened from the inbox with `?key=`) that loads a review artifact and lets the user name / merge / ignore the diarized speakers, then submits the naming to finalize.
 
 ### State
 
@@ -130,7 +137,7 @@ XState v5: the only mature option with first-class snapshot persistence (`actor.
 ## 5. Recording flow (end to end)
 
 1. Content script matches `meet.google.com/([a-z]{3}-[a-z]{4}-[a-z]{3})` → injects the informative pill: above the join button on the pre-join screen (`[data-promo-anchor-id="join-button"]` → `[jsname="Qx7uuf"]`), after the account avatar in the in-call top bar (geometric heuristic over `img[src*="googleusercontent.com"]`), floating top-right as fallback. While idle the pill points to the extension icon.
-2. User starts from the popup (or Ctrl+Shift+S). Mic missing → SW opens the permission page; required fields unfilled (project: pitch + participants) → the popup form blocks the start.
+2. User starts from the popup (or Ctrl+Shift+S). Mic missing → SW opens the permission page; required fields unfilled (project: pitch) → the popup form blocks the start.
 3. SW: `getMediaStreamId({ targetTabId })` → creates the upload session via the API (which stamps the metadata at `CreateMultipartUpload`) and persists the session ledger → ensures the offscreen doc → sends `START_CAPTURE { streamId, session }`.
 4. Offscreen: builds the audio graph, starts MediaRecorder; chunks accumulate in memory; at ≥5 MiB a part is cut → presigned URL requested → PUT (retry w/ exponential backoff + jitter; fresh URL per attempt) → `{partNumber, etag}` reported to the SW, which persists the ledger (offscreen docs cannot touch `chrome.storage` — they only get `chrome.runtime`).
 5. Stop (leave detection, tab close, track end, or popup stop button) → streams released immediately (the OS recording indicator goes away) → final part of any size flushed → `complete` → UI snapshot `finished` → offscreen doc closed.
@@ -155,6 +162,14 @@ All requests carry `Authorization: Bearer <token>` and `Content-Type: applicatio
 
 `bucketRef` is the logical profile bucket (`project`), resolved server-side to a real bucket — never a raw bucket name from the client.
 
+The same Lambda also serves the **review queue** (same bearer auth + origin allowlist). Because auth is a single shared token, `recordedBy` is a trusted query param (matching the upload trust model):
+
+| Route | Body/query → Response |
+|---|---|
+| `GET /reviews?recordedBy=<id>` | `{reviews: [{key, pitchId, createdAt}]}` — one `ListObjectsV2` over `reviews/{recordedBy}/`; rows parsed from the keys (no per-object fetch) |
+| `GET /reviews/item?key=<reviewKey>` | the review artifact JSON (`GetObject`) |
+| `POST /reviews/finalize` | `{key, naming}` → `202` after async-invoking the Finalize Lambda (`naming = {names, merges, ignores}`) |
+
 ### 6.2 Production host: AWS Lambda
 
 The contract is served by a **credentialed signer** — the single component that holds AWS access. The extension never holds credentials: it PUTs each part **directly to S3** with a presigned URL (the high-volume path), and calls the signer only to create the upload, mint part URLs on demand, and finalize.
@@ -170,13 +185,13 @@ It runs as a single **AWS Lambda behind a Function URL**, sitting next to the bu
 - **CORS + TLS** come from the Function URL: `AllowOrigins` = the extension origin (§8). Function URL auth is `NONE`; the app does its own timing-safe **bearer-token** check (fail-closed).
 - Presigned part URLs are signed with the role's temporary credentials (≈1 h) — fine, since the client requests a fresh URL per part per attempt; `complete` / `abort` / `list-parts` are plain server-side S3 calls, so their lifetime is never bounded by URL expiry.
 
-The §7 processing pipeline runs in the **same SAM stack** as a pair of event-driven Lambdas — no separate host.
+The §7 processing pipeline runs in the **same SAM stack** as event-driven Lambdas (ingest, callback, finalize, sweeper) — no separate host. The upload Lambda also async-invokes the Finalize Lambda on review submit (`FINALIZE_FUNCTION_NAME`, IAM `lambda:InvokeFunction`).
 
-Env (local dev — `api/.env.example`): `API_TOKEN`, `ALLOWED_ORIGINS`, `AWS_REGION`, AWS credentials, `S3_BUCKET_PROJECT` (the transient bucket), `PRESIGN_EXPIRES_SECONDS`. In production the AWS credentials come from the Lambda execution role, not env; the pipeline Lambdas' secrets come from Secrets Manager (§7).
+Env (local dev — `api/.env.example`): `API_TOKEN`, `ALLOWED_ORIGINS`, `AWS_REGION`, AWS credentials, `S3_BUCKET_PROJECT` (the transient bucket), `PRESIGN_EXPIRES_SECONDS`, and `FINALIZE_FUNCTION_NAME` (blank locally → finalize runs inline in the request). In production the AWS credentials come from the Lambda execution role, not env; the pipeline Lambdas' secrets come from Secrets Manager (§7).
 
 ## 7. Processing pipeline (event-driven AWS)
 
-The bucket is the only state: an object's existence means "pending", its deletion means "done" — no ledger database. The pipeline is two Lambdas in the §6 SAM stack, triggered by S3 events and driven by Deepgram **async callbacks**.
+The bucket is the only state, now with **two transient queues**: `projects/*.webm` = pending transcription, `reviews/*.json` = pending human review. An object's existence means "pending"; its deletion means "done" — no ledger database. The pipeline is event-driven Lambdas in the §6 SAM stack, driven by Deepgram **async callbacks** and a human review step in between.
 
 ```mermaid
 flowchart TD
@@ -187,29 +202,41 @@ flowchart TD
     SUB --> TAG1["tag status=submitted"]
     SUB -->|"async"| DG["Deepgram transcribes"]
     DG -->|"transcript POST (token in query)"| CB["Callback Lambda"]
-    CB --> V["validate token"]
-    V --> LK["tag status=processing (lock)<br/>skip if already deleted"]
-    LK --> F["format [speaker N] utterances"]
-    F --> P1["LLM: label speakers + summary + merge context"]
-    P1 --> P2["Notion: meeting log + rewrite living context"]
-    P2 --> DEL["DeleteObject → 200"]
+    CB --> LK["tag status=processing<br/>skip if already deleted"]
+    LK --> F["format [speaker N] + pick samples"]
+    F --> G["LLM: best-guess names (cheap, best-effort)"]
+    G --> WR["write reviews/{recordedBy}/…json"]
+    WR --> DEL["DeleteObject the .webm → 200"]
+    WR -.pending.-> RV["Human review (extension)<br/>name / merge / ignore"]
+    RV -->|"submit naming"| FIN["Finalize Lambda"]
+    SWP["Sweeper (daily)<br/>best-guess after N days"] --> FIN
+    FIN --> AP["apply naming → labeled transcript"]
+    AP --> P1["LLM: summary + merge context"]
+    P1 --> P2["Notion: meeting log + rewrite context"]
+    P2 --> DEL2["DeleteObject the review → done"]
 ```
 
 **Mechanics**
 
 - **Trigger**: a native S3 `ObjectCreated:*` notification (prefix `projects/`, suffix `.webm`) invokes the **Ingest Lambda** (`api/src/ingest.ts`) — one event per `CompleteMultipartUpload`, no poll latency. The bucket is in the stack (§8), so SAM owns the notification config.
 - **Ingest**: presigns a GET URL for the object and POSTs it to Deepgram (`nova-3`, `language=multi&diarize=true&punctuate=true&utterances=true`, `callback=<CallbackFn URL>?key=&token=`). Deepgram fetches the audio itself and acks immediately with a `request_id`, so the Lambda returns in milliseconds. The object is tagged `status=submitted`. Idempotent: a duplicate event (S3 is at-least-once) is skipped when a `status` tag already exists. Async-invoke failures land in an SQS DLQ.
-- **Callback** (`api/src/callback.ts`, its own Function URL): Deepgram POSTs the transcript when done. It validates the shared-secret `token` (timing-safe; the `dg-token` header is available as defense-in-depth), tags `status=processing`, `HeadObject`s the metadata contract (§2), formats the utterances as `[speaker N] text` lines, routes (below), then `DeleteObject` and returns 200.
-- **Idempotency / retry**: delete-on-success is the terminus — a duplicate callback for an already-deleted key gets `NoSuchKey` on `HeadObject` and acks 200 without re-writing. On failure the callback returns 5xx and Deepgram re-POSTs (up to ~10×, 30 s apart). That is the lean retry budget; an outage longer than that drops the recording before the 3-day lifecycle expiry (§8) — acceptable for now, revisit with SQS decoupling if it bites. The biggest risk is the inline LLM+Notion work exceeding Deepgram's callback HTTP timeout, which would make Deepgram retry while attempt #1 is still running; the `status=processing` tag and an idempotent Notion upsert (keyed by `pitch_id`) bound the damage.
+- **Callback** (`api/src/callback.ts`, its own Function URL): Deepgram POSTs the transcript when done. It validates the shared-secret `token` (timing-safe; the `dg-token` header is defense-in-depth), tags `status=processing`, `HeadObject`s the metadata contract (§2), formats the utterances into `[speaker N]` lines + per-speaker sample quotes, runs a **cheap best-effort LLM guess** of each speaker's name from in-conversation cues (a failure is swallowed — the human names them anyway), writes the **review artifact** to `reviews/{recordedBy}/{epochMs}-{pitchId}-{uuid}.json`, then `DeleteObject`s the audio and returns 200. **No Notion here** — the audio is gone but the transcript lives in the artifact, so the 3-day transient-audio promise holds without waiting on the human.
+- **Idempotency / retry**: writing the artifact + deleting the audio is the callback terminus — a duplicate callback for an already-deleted key gets `NoSuchKey` on `HeadObject` and acks 200. On failure the callback returns 5xx and Deepgram re-POSTs (~10×, 30 s apart); the work is now cheap (no Notion), so blowing the callback HTTP timeout is far less likely than before.
 - **Secrets**: the Deepgram key, callback token, LLM key, and Notion key live in a single **Secrets Manager** secret (`PIPELINE_SECRET_ARN`), fetched once per cold start and memoized — never in a Lambda env var. The LLM is provider-agnostic (`LLM_BASE_URL` / `LLM_MODEL`, OpenAI-compatible).
 - Routing is derived from the profile table (`api/src/pipeline/routing.ts` maps a key prefix back to a profile), so re-adding a profile is a table entry — only `project` is wired today.
 
-**Project branch** (`api/src/pipeline/notion.ts`)
+### 7.1 Review + Finalize
 
-1. One LLM pass over the `[speaker N]` transcript + the `participants` metadata + the pitch's current living context, returning JSON `{labeledTranscript, summary, context}`: it relabels speakers with participant names using conversational cues (a low-confidence speaker keeps its generic label), writes a bullet summary, and merges the conversation into the running context (topics, decisions, open action items).
-2. In Notion, anchored on the `pitch_id` page:
-   - Ensure a **`🎙 Meeting log`** child page; append a dated entry (`date · participants`, summary, full labeled transcript in a toggle).
-   - Maintain a **`🧭 Current context`** child page, rewritten each run with the merged context — renaming a still-generic speaker by editing Notion *is* the labeling interface.
+The review is **blocking**: nothing reaches Notion until names are confirmed (by the human, or by the sweeper backstop). This keeps the meeting log and the rewritten context correct on the first write instead of churning generic labels.
+
+- **Artifact** (`api/src/pipeline/review.ts`): `{id, pitchId, recordedBy, meetSlug, startedAt, createdAt, speakers[], transcript[]}`. Each speaker carries `{index, guess, confidence, samples[], wordCount}`; the full diarized `transcript` is retained so finalize can relabel without the audio. The key is partitioned by `recordedBy` so "list my reviews" is one prefix `ListObjectsV2`, and embeds `epochMs`+`pitchId` so the inbox renders rows from the keys alone.
+- **Review UI** (extension): the SW polls `GET /reviews?recordedBy=<userId>` (fast burst after a recording, then daily), surfacing a toolbar badge + popup inbox. The review page loads the artifact, shows each speaker's sample quotes with an editable name (pre-filled from `guess`), plus **merge** (fold a duplicate speaker into another) and **ignore** (drop noise). Submit → `POST /reviews/finalize {key, naming}` → optimistic local drop from the queue.
+- **Finalize Lambda** (`api/src/finalize.ts`): invoked async on submit (or in-process by the sweeper with `bestGuess`). It applies `{names, merges, ignores}` to the stored transcript → a labeled transcript + the distinct names; runs the **heavy** LLM pass (summary + context-merge, now that names are known) returning `{summary, context}`; writes Notion (below); then `DeleteObject`s the artifact (the terminus). Idempotent: a missing artifact acks.
+- **Sweeper backstop** (`api/src/sweeper.ts`): a daily schedule best-guess-finalizes any artifact older than `REVIEW_STALE_DAYS` (default 7), so a forgotten review still reaches Notion and the queue self-cleans. The `reviews/` 30-day lifecycle expiry (§8) sits beneath it as the ultimate backstop.
+
+**Notion write** (`api/src/pipeline/notion.ts`), anchored on the `pitch_id` page:
+- Ensure a **`🎙 Meeting log`** child page; append a dated entry (`date · participants`, summary, full labeled transcript in a toggle) — `participants` is the set of names assigned in the review.
+- Maintain a **`🧭 Current context`** child page, rewritten each run with the merged context. (Editing Notion directly still works as a secondary correction path.)
 
 (The Pitches DB lives at data source `collection://66dec714-8dee-48df-bab4-332514bc087f`; the pipeline anchors on the `pitch_id` page directly. Notion block shapes in `notion.ts` should be verified against the live workspace before the first production run.)
 
@@ -222,8 +249,10 @@ The bucket (`RecordingsBucket`, name `filadd-chrome-recorder`) is **created and 
 CORS, lifecycle, and the S3→Ingest notification now live in the template's bucket resource:
 
 - **CORS**: `AllowedOrigins: [<extension origin>]`, `AllowedMethods: [PUT]`, `AllowedHeaders: ["*"]`, `ExposedHeaders: [ETag]` — the `ETag` exposure is mandatory for browser multipart (§4.4).
-- **Lifecycle**: `AbortIncompleteMultipartUpload` after 7 days, and object expiration after 3 days — the terminal backstop that makes "we never retain audio" a property of the system, not a promise of the pipeline.
+- **Lifecycle** (prefix-scoped, since the two queues have different retention): `AbortIncompleteMultipartUpload` after 7 days; `projects/` (audio) expires after **3 days** — the backstop that makes "we never retain audio" a system property, not a pipeline promise; `reviews/` (transcript artifacts) expires after **30 days** as the ultimate backstop under the sweeper (§7.1).
 - **Notification**: SAM wires `ObjectCreated:*` (prefix `projects/`, suffix `.webm`) to the Ingest Lambda — don't hand-write `NotificationConfiguration`, SAM owns it.
+
+Per-Lambda IAM (least privilege on the one bucket): upload signer — multipart actions + `GetObject`/`ListBucket` on `reviews/*` + `lambda:InvokeFunction` on Finalize; callback — get/tag/**put**/delete (`put` writes the artifact); finalize & sweeper — `GetObject`/`DeleteObject` on `reviews/*` (+ sweeper `ListBucket`) + `secretsmanager:GetSecretValue`.
 
 ## 9. Future work (explicitly out of scope for v1)
 

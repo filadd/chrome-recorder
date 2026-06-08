@@ -1,4 +1,5 @@
 import type { ProfileId } from "../profiles/types";
+import type { ReviewSummary } from "../review/types";
 import type { UploadSession } from "./messages";
 
 export type UiState =
@@ -42,7 +43,6 @@ export interface Settings {
   enabledProfileIds: ProfileId[];
   meetingFields: MeetingFields;
   pitches: PitchEntry[];
-  participantsByPitch: Record<string, string>;
 }
 
 export interface PendingUpload {
@@ -57,7 +57,6 @@ export const DEFAULT_SETTINGS: Settings = {
   enabledProfileIds: ["project"],
   meetingFields: { slug: null, values: {} },
   pitches: [],
-  participantsByPitch: {},
 };
 
 const isKnownProfileId = (id: unknown): id is ProfileId => id === "project";
@@ -91,9 +90,8 @@ export const normalizeSettings = (stored: Partial<Settings> | undefined): Settin
     merged.pitches = [];
   }
 
-  if (merged.participantsByPitch == null || typeof merged.participantsByPitch !== "object") {
-    merged.participantsByPitch = {};
-  }
+  // Drop the dropped per-pitch participants memory if it lingers in stored settings.
+  delete (merged as Settings & { participantsByPitch?: unknown }).participantsByPitch;
 
   return merged;
 };
@@ -146,6 +144,22 @@ export const setPendingUpload = (pendingUpload: PendingUpload): Promise<void> =>
 
 export const clearPendingUpload = (): Promise<void> =>
   chrome.storage.local.remove("pendingUpload");
+
+// The SW poller's cached view of "my pending reviews" — the UI renders this
+// snapshot reactively (via onChanged) instead of calling the API itself.
+export interface ReviewQueue {
+  items: ReviewSummary[];
+  polledAt: number | null;
+}
+
+export const DEFAULT_REVIEW_QUEUE: ReviewQueue = { items: [], polledAt: null };
+
+export const getReviewQueue = async (): Promise<ReviewQueue> =>
+  (await chrome.storage.local.get<{ reviewQueue?: ReviewQueue }>("reviewQueue")).reviewQueue ??
+  DEFAULT_REVIEW_QUEUE;
+
+export const setReviewQueue = (reviewQueue: ReviewQueue): Promise<void> =>
+  chrome.storage.local.set({ reviewQueue });
 
 export const getRecordingTabId = async (): Promise<number | null> =>
   (await chrome.storage.session.get<{ recordingTabId?: number }>("recordingTabId"))

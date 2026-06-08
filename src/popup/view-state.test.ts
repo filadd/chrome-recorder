@@ -57,10 +57,7 @@ describe("deriveView", () => {
     const project = deriveView(
       snapshot("idle"),
       settings({
-        meetingFields: {
-          slug: null,
-          values: { project: { pitchId: PITCH_ID, participants: "Ana, Beto" } },
-        },
+        meetingFields: { slug: null, values: { project: { pitchId: PITCH_ID } } },
       }),
       true,
       null,
@@ -69,11 +66,11 @@ describe("deriveView", () => {
     expect(project.ctaKind).toBe("start");
   });
 
-  it("blocks the project start until every required field is filled", () => {
+  it("blocks the project start until the pitch is selected", () => {
     const partial = deriveView(
       snapshot("idle"),
       settings({
-        meetingFields: { slug: "abc", values: { project: { pitchId: PITCH_ID } } },
+        meetingFields: { slug: "abc", values: { project: {} } },
       }),
       true,
       "abc",
@@ -84,10 +81,7 @@ describe("deriveView", () => {
     const filled = deriveView(
       snapshot("idle"),
       settings({
-        meetingFields: {
-          slug: "abc",
-          values: { project: { pitchId: PITCH_ID, participants: "Ana, Beto" } },
-        },
+        meetingFields: { slug: "abc", values: { project: { pitchId: PITCH_ID } } },
       }),
       true,
       "abc",

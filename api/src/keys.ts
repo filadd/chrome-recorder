@@ -32,7 +32,6 @@ export const renderKey = (
 // only these keys are stamped, under their snake_case pipeline names.
 const META_KEYS: Record<string, string> = {
   pitchId: "pitch_id",
-  participants: "participants",
   meetSlug: "meet_slug",
   userId: "recorded_by",
   timestamp: "started_at",
