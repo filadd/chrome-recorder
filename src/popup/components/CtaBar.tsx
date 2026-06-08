@@ -16,6 +16,7 @@ interface Props {
 
 export const CtaBar = ({ kind, disabled, onClick }: Props) => (
   <div className="cta-bar">
+    {kind !== "newRecording" ? <p className="cta-note">{t("popup_required_note")}</p> : null}
     <button
       className={`cta${kind === "newRecording" ? " back" : ""}`}
       disabled={disabled}

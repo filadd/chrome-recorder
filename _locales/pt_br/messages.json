@@ -197,8 +197,8 @@
   "notice_needs_mic": {
     "message": "Falta a permissão de microfone para gravar."
   },
-  "field_required_hint": {
-    "message": "Obrigatório para iniciar a gravação"
+  "popup_required_note": {
+    "message": "* Estes campos são obrigatórios"
   },
   "cta_open_meet_first": {
     "message": "Abra uma chamada do Meet primeiro"

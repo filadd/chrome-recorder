@@ -51,7 +51,6 @@ export const ProfileFieldsForm = ({ profile, values, pitches, onChange }: Props)
               {field.required ? <span className="field-required"> *</span> : null}
             </label>
             {control(field, value, missing)}
-            {missing ? <span className="field-hint">{t("field_required_hint")}</span> : null}
           </div>
         );
       })}

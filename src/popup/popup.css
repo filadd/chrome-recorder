@@ -374,6 +374,13 @@ button {
   padding: 0 12px 12px;
 }
 
+.cta-note {
+  margin: 0 0 8px;
+  font-size: 9px;
+  color: #c43434;
+  text-align: right;
+}
+
 .cta {
   width: 100%;
   padding: 9px 12px;

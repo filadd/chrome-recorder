@@ -197,8 +197,8 @@
   "notice_needs_mic": {
     "message": "Microphone permission needed to record."
   },
-  "field_required_hint": {
-    "message": "Required to start recording"
+  "popup_required_note": {
+    "message": "* These fields are required"
   },
   "cta_open_meet_first": {
     "message": "Open a Meet call first"
