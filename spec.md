@@ -46,7 +46,7 @@ flowchart LR
     P -->|"GET session inbox (JWT)"| GW["Filadd gateway"]
     SW -->|"streamId + session"| OFF["Offscreen document<br/>capture + mix + record<br/>upload loop"]
     OFF -->|"PUT parts (presigned)"| S3["S3 (transient)"]
-    OFF -->|"create / complete / abort"| API["Upload API<br/>Hono + AWS SDK"]
+    OFF -->|"create / parts / complete / abort"| API["Upload API<br/>(n8n webhook workflow;<br/>Hono app = local-dev ref)"]
     API --> S3
     N8N["n8n pipeline<br/>transcribe + route + delete"] --> S3
     N8N --> SCHED["scheduler-api"]
@@ -151,17 +151,41 @@ The extension reuses the Filadd web session instead of implementing its own logi
 
 ## 7. Upload API
 
-`api/` — Node + Hono + AWS SDK v3, bearer auth (timing-safe compare, fail-closed) + origin allowlist.
+The extension never holds AWS credentials, so multipart orchestration (create, presign part URLs, complete, abort, recover) is server-side. The endpoint **contract** below is fixed — it is what `src/upload/api-client.ts` calls — and is implementation-agnostic; bearer auth + an origin allowlist gate every route.
+
+### 7.1 Contract (what the offscreen client calls)
+
+All requests carry `Authorization: Bearer <token>` and `Content-Type: application/json`; CORS exposes `Authorization`/`Content-Type` to the extension origin (§9).
 
 | Route | Body → Response |
 |---|---|
 | `POST /uploads` | `{profileId, auto, fields}` → validates (required fields, `sessionId` numeric, `pitchId` 32-hex), renders + sanitizes key, builds snake_case metadata, `CreateMultipartUpload` → `{uploadId, key, bucketRef}` |
-| `POST /uploads/parts` | `{bucketRef, key, uploadId, partNumbers[]}` → `{urls: [{partNumber, url}]}` (presigned `UploadPartCommand`, 1 h) |
-| `POST /uploads/complete` | `{bucketRef, key, uploadId, parts: [{PartNumber, ETag}]}` → `{key, location}` |
+| `POST /uploads/parts` | `{bucketRef, key, uploadId, partNumbers[]}` → `{urls: [{partNumber, url}]}` (presigned `UploadPart`, 1 h). Client requests one part at a time today; the array shape allows batching. |
+| `POST /uploads/complete` | `{bucketRef, key, uploadId, parts: [{PartNumber, ETag}]}` → `{key, location}` (parts sorted by `PartNumber` before `CompleteMultipartUpload`) |
 | `POST /uploads/list-parts` | `{bucketRef, key, uploadId}` → `{parts: [{PartNumber, ETag}]}` (paginated; recovery) |
 | `DELETE /uploads` | `{bucketRef, key, uploadId}` → `{aborted: true}` |
 
-Env (see `api/.env.example`): `API_TOKEN`, `ALLOWED_ORIGINS`, `AWS_REGION`, credentials, `S3_BUCKET_ORIENTATION|PROJECT` (typically both point at the **same transient bucket** — prefixes already separate the profiles), `PRESIGN_EXPIRES_SECONDS`.
+`bucketRef` is the logical profile bucket (`orientation` / `project`), resolved server-side to a real bucket — never a raw bucket name from the client.
+
+### 7.2 Production host: n8n webhook workflow
+
+Production serves this contract from **n8n** (n8n.filadd.com), consolidating it with the processing pipeline (§8) so AWS lives in one set of n8n credentials and there is no separate Node service to operate. The standalone `api/` (Node + Hono + AWS SDK v3, timing-safe bearer compare, fail-closed) stays as the **local-dev reference and the executable definition of the contract** — its `keys.ts`/`profiles.ts` validation, key rendering and metadata building are the behavior the n8n workflow must reproduce. The server remains the trust boundary, so n8n owns its **own** copy of the profile table (same rule as the Hono/extension duplication in CLAUDE.md).
+
+Shape:
+
+- A **separate** workflow from the §8 processing pipeline (different trigger — Webhook vs Schedule — and lifecycle). One workflow with five **Webhook trigger** nodes, one per route; `POST /uploads` and `DELETE /uploads` share the `uploads` path and are disambiguated by method. The extension's `API_BASE_URL` becomes the n8n webhook base (e.g. `https://n8n.filadd.com/webhook`) so `/uploads`, `/uploads/parts`, … resolve.
+- **Control-plane calls** (create / complete / abort / list-parts) use n8n's native **AWS S3 node** (or HTTP Request + AWS creds) — these run server-side and need no presigning.
+- **Presign** (`/uploads/parts`) is the one step with no native n8n node: a **Code node** must mint the URL via `@aws-sdk/s3-request-presigner`'s `getSignedUrl(UploadPartCommand)`, reproducing `requestChecksumCalculation: "WHEN_REQUIRED"` (§4.4) or part PUT signatures break. Fallback if the SDK can't be loaded: hand-rolled SigV4 query signing with the built-in `crypto`.
+- **Auth/CORS**: each webhook validates the shared bearer token (n8n Header Auth credential or a guard expression) and returns the extension-origin CORS headers via "Respond to Webhook".
+
+**Open questions to settle against the live instance (next step):**
+
+- Does n8n.filadd.com allow external npm modules in Code nodes (`NODE_FUNCTION_ALLOW_EXTERNAL` covering `@aws-sdk/*`)? Decides SDK-presign vs hand-rolled SigV4.
+- Webhook path semantics: can multiple nodes share `uploads` across methods, and does the resulting public URL match `…/webhook/uploads(/…)` cleanly?
+- Where the AWS credential and the shared upload token live as n8n credentials.
+- Per-part webhook execution volume (a fresh URL per part per retry) vs n8n execution logging — whether to batch `partNumbers[]` from the client.
+
+Env for the reference `api/` (see `api/.env.example`): `API_TOKEN`, `ALLOWED_ORIGINS`, `AWS_REGION`, credentials, `S3_BUCKET_ORIENTATION|PROJECT` (typically both point at the **same transient bucket** — prefixes already separate the profiles), `PRESIGN_EXPIRES_SECONDS`.
 
 ## 8. Processing pipeline (n8n)
 
@@ -208,11 +232,13 @@ flowchart TD
 
 ## 9. S3 bucket setup (transient staging bucket)
 
+The extension ID is pinned via the `key` field in `manifest.config.ts` (public half of the gitignored `extension-key.pem`), so the `chrome-extension://` origin below is stable across reinstalls and CORS can name it exactly.
+
 CORS:
 
 ```json
 [{
-  "AllowedOrigins": ["chrome-extension://<EXTENSION_ID>"],
+  "AllowedOrigins": ["chrome-extension://hokpbkbpbggoeibolomknakfccmgoeae"],
   "AllowedMethods": ["PUT"],
   "AllowedHeaders": ["*"],
   "ExposeHeaders": ["ETag"]
