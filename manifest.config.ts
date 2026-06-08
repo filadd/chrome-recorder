@@ -9,6 +9,11 @@ export default defineManifest({
   version: pkg.version,
   default_locale: "es",
 
+  // Pins the unpacked extension ID to hokpbkbpbggoeibolomknakfccmgoeae so the S3
+  // bucket CORS can name an exact origin. Public half of extension-key.pem (the
+  // private half is gitignored and must be kept to repackage with this same ID).
+  key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArlUmFTLBBbOJKjAC8tvQY42OXIQkORrfFykFsmd/ZsJrku7x9wdg2KH+xwzSaamwcCLQuUf9mq9UfJ1+mlWTyk2jEkjMb/+umTWsvZTrAi0NvUkr3QasvawAQyZytnKIBtm8WPdw2Qan70TTIgAKssP9VctWrTVOaSF8z96CeK4lriSqx4o6ME+A+TXxOnDF6KSWIQSZF4cK2RbY/jBG2xA3q+YBpKGQ6ut24e+5lKzTFjADoRb3qDmBlTewOqq32XgLkg5KHFR1tNzf9y6JUzlmK408mBBCE38RZymvXpubqjh/f0TRxAEvcVNyrKkdlVFdbcy9beaPyOfL6zpQgwIDAQAB",
+
   icons: {
     16: "icons/icon16.png",
     48: "icons/icon48.png",

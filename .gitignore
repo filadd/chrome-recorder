@@ -9,6 +9,10 @@ dist/
 .env.*
 !.env.example
 
+# Extension signing key — pins the extension ID; the public half lives in
+# manifest.config.ts, the private half must never be committed.
+extension-key.pem
+
 # Local overrides
 *.local
 
