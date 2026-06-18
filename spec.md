@@ -9,9 +9,9 @@ A Chrome extension that records Google Meet conversations and uploads them for t
 - **Deterministic downstream**: each profile captures the association it needs (the **pitch id**) *at record time*, stamped as S3 object metadata, so the processing flow never has to reconstruct "which conversation is this?" after the fact.
 - **Audio-transient by design**: the recordings bucket is a transient queue, not an archive. The processing flow deletes each object after transcription; a lifecycle rule expires stragglers. Only transcripts and what's derived from them persist.
 
-The extension uploads through Filadd's existing **`file-uploads-api`** (multipart transfer mode); the downstream processing — transcription (`ai-conversations-api`), human speaker review (in **Notion**), and living-context delivery — is orchestrated by **n8n**. See the Notion design docs *Pitch conversations transcriber*, *Multipart Uploads*, and *Chrome Recorder Extension*.
+The extension uploads through Filadd's existing **`file-uploads-api`** (multipart transfer mode); the downstream work — **diarized transcription** (`transcript-api`, Deepgram), human **speaker review** (in **Notion**), and **living-context delivery** (`ai-conversations-api`) — will ultimately be orchestrated by **n8n**. See the Notion design docs *Pitch conversations transcriber*, *Multipart Uploads*, *Transcription API*, and *Chrome Recorder Extension*.
 
-**`api/` in this repo is a local n8n stand-in**: it implements only the **Upload flow** (validate the user via the gateway, then proxy the multipart upload to a locally-run `file-uploads-api`) so the extension can be exercised end-to-end before the real n8n workflows exist. The Processing and Delivery flows are out of scope here.
+**`api/` in this repo is a local n8n stand-in**: it now implements all three flows the real n8n will own — **Upload** (validate via the gateway, proxy the multipart upload to `file-uploads-api`), **Processing** (poll the recordings bucket → `transcript-api` diarized transcription → write the Notion Transcription + Segments + Speakers → delete the audio), and **Delivery** (poll Notion for reviewed transcripts → `ai-conversations-api` context generation → upsert the Notion Context). It is a faithful, runnable rehearsal of the n8n workflows against the real local services; **only building the actual n8n workflows remains** (see §7).
 
 ## 2. Use cases / profiles
 
@@ -47,9 +47,13 @@ flowchart LR
     API -->|"GET /api/user/me/ (Bearer JWT)"| GW["gateway"]
     API -->|"multipart create / part"| FU["file-uploads-api"]
     FU -->|"assemble + post-process + land"| S3
-    S3 -.poll.-> N8N["n8n flows (real, later):<br/>transcribe → Notion → context"]
-    N8N --> NOTION["Notion (pitch)"]
+    API -.->|"Processing: poll + presign GET"| S3
+    API -->|"diarized transcription"| TR["transcript-api<br/>(Deepgram)"]
+    API -->|"Delivery: context generation"| AIC["ai-conversations-api"]
+    API -->|"Transcriptions / Segments /<br/>Speakers / Contexts"| NOTION["Notion"]
 ```
+
+(Processing + Delivery run in the stand-in today; the real n8n will own them later — §7.)
 
 ### Context responsibilities
 
@@ -59,7 +63,7 @@ flowchart LR
 - **Popup** (`src/popup/`): profile picker, per-profile field form (pitch select), userId setting, pitch-list management in settings, status mirror, and recovery affordances.
 - **Permission page** (`src/permission/`): a visible page whose only job is the one-time mic `getUserMedia` grant — offscreen documents cannot show permission prompts.
 
-Speaker review is **not** an extension surface anymore — it lives in Notion (Processing/Delivery, real n8n).
+Speaker review is **not** an extension surface anymore — it lives in Notion (between the stand-in's Processing and Delivery flows; §7).
 
 ### State
 
@@ -156,15 +160,63 @@ Errors: `401` (invalid/absent JWT), `400` (missing/malformed `pitchId`), `404` (
 
 `api/` (Node + Hono) runs locally via `npm run dev` on `:8787`. Env (`api/.env.example`): `PORT`, `ALLOWED_ORIGINS`, `GATEWAY_URL`, `FILE_UPLOADS_API_URL`, `DESTINATION_BUCKET=filadd-chrome-recorder-prod`, `DESTINATION_PATH=projects`. The gateway, users-api, and file-uploads-api run locally via the `dockerfiles` repo (`./manage.sh up file-uploads users` + the gateway). `file-uploads-api`'s S3 client points at real AWS (no MinIO override), so local part PUTs hit the real staging bucket.
 
-## 7. Processing & delivery (real n8n — out of scope here)
+## 7. Processing & delivery (implemented in the stand-in)
 
-Transcription, speaker review, and living-context delivery are **n8n flows**, not built in this repo. Summarized from the *Pitch conversations transcriber* design doc:
+Transcription, speaker review, and living-context delivery are **n8n flows** in the target architecture. The stand-in (`api/`) now **rehearses them locally** so the whole pipeline can be exercised end-to-end before the real n8n exists. They are operator/schedule-triggered (no extension JWT — distinct from `/uploads`), so the stand-in exposes them as **manual endpoints** that step through each stage:
 
-- **Processing** (schedule/poll): n8n lists the recordings bucket, reads `pitch_id` + `recorded_by` from each object's metadata, runs the `diarized` transcription (`ai-conversations-api`), creates a Notion **Transcription** (`pending`) with nested **Segments** and **Speakers**, and deletes the audio.
-- **Review** (human, in Notion): the reviewer assigns a **Person** to each numeric speaker row → state `speakers_assigned`.
-- **Delivery** (Notion poll): n8n rebuilds the named transcript, runs an `ai-conversations` conversation (current context + transcript → updated context), upserts the **Contexts** row, and sets the Transcription `delivered`.
+| Route | Does |
+|---|---|
+| `GET /processing/preview` | List bucket objects under `projects/` + their `pitch_id`/`recorded_by` metadata (read-only dry run) |
+| `POST /processing/run` `{limit?}` | For each recording: presign a GET → `transcript-api` diarized transcription → create the Notion Transcription (`pending`) + Speakers + Segments → **delete the audio** |
+| `POST /delivery/run` `{limit?}` | For each Transcription a reviewer marked `speakers_assigned`: rebuild the named transcript → `ai-conversations` context generation → upsert the Notion Context → mark `delivered` |
 
-The stand-in implements none of this; it stands in only for the Upload webhook.
+```mermaid
+sequenceDiagram
+    participant SI as api/ (stand-in)
+    participant S3 as Recordings bucket
+    participant TR as transcript-api (Deepgram)
+    participant N as Notion
+    participant AIC as ai-conversations-api
+    Note over SI,N: Processing (POST /processing/run)
+    SI->>S3: list projects/*.webm + HeadObject (pitch_id, recorded_by)
+    SI->>S3: presign GET
+    SI->>TR: POST /api/transcription/ {audio_url, strategy:diarized, mode:async}
+    TR-->>SI: {id}; poll GET /api/transcription/{id}/ → {segments[]}
+    SI->>N: create Transcription(pending) + Speakers + Segments
+    SI->>S3: delete audio
+    Note over N: Review (human): type each Speaker's Person, State → speakers_assigned
+    Note over SI,AIC: Delivery (POST /delivery/run)
+    SI->>N: query Transcriptions where State = speakers_assigned
+    SI->>N: read Segments + Speakers → named transcript
+    SI->>AIC: conversation (prompt) + message (current context + transcript)
+    AIC-->>SI: updated context
+    SI->>N: upsert Context(pitch), State → delivered
+```
+
+**Diarization is `transcript-api`, not `ai-conversations`.** `transcript-api` owns the Deepgram `diarized` strategy (`POST /api/transcription/` `strategy:diarized, mode:async`; poll `GET /api/transcription/{id}/`). `ai-conversations-api` only does the **context-generation conversation**: the stand-in sends the configured prompt as the system message and a user message with three blocks — the **pitch content** (the pitch page's title + body, as background), the **current living context**, and the **named transcript**. The prompt is a deliberately **focused "reduced situation state"** (inspired by the `evolve-situation-state` skill but stripped of its change-log/source-history/metadata cruft): it returns a short markdown living context with **Descripción / Decisiones / Action items (`- [ ]`) / Temas abiertos** sections, evolving the prior context incrementally rather than rewriting history.
+
+### Notion data model
+
+Four databases under the *Contexto de pitches automático* building-project page (created global + related, **not** per-page nested):
+
+- **Recorder Transcriptions** — one row per recording: `Name`, `State` (select: `pending`/`speakers_assigned`/`delivered`/`failed`), `Pitch` (relation → the existing Pitches DB), `Recorded by` (person), and two-way `Segments`/`Speakers` relations (so they surface inline on the page for the reviewer).
+- **Recorder Segments** — one row per diarized segment: `Order`, `Speaker` (**relation → Recorder Speakers**, not a bare index — renaming a speaker flows to every segment), `Text`, `Start ms`.
+- **Recorder Speakers** — one row per numeric speaker: `Speaker index` and `Person` (**free text** the reviewer types — see limitations).
+- **Recorder Contexts** — one row per pitch: `Pitch` (relation) + `Updated` (date). The living context itself is the **page body** (markdown-ish blocks — headings/bullets/paragraphs), not a property: long prose renders better and isn't capped at a 2000-char rich-text chunk. Delivery replaces the body each run. The durable outcome.
+
+### Auth + config
+
+The stand-in reaches Notion with a **token** (`NOTION_TOKEN`) and the four DB ids; `transcript-api`/`ai-conversations` via their local URLs; the recordings bucket via the AWS provider chain. See §6.3 / `api/.env.example` for the full env (`NOTION_*`, `TRANSCRIPT_API_URL`, `AI_CONVERSATIONS_*`, `AWS_REGION`). Per-item failures are isolated (logged, audio kept for retry) so one bad recording never blocks the batch.
+
+### Known Notion limitations (carry into the real n8n build)
+
+- **Personal Access Tokens cannot list workspace users** (`GET /v1/users` → 403). So `Recorded by` (a person field) can't be resolved from an email with a PAT — it's left blank and best-effort. The real n8n should use an **integration token with the user-read capability** if `Recorded by` matters. (This is why Speakers use a free-text `Person`, not a people field.)
+- **Database templates can't be applied via the API.** The *Pitch Trascription* template's useful inline views are linked-database blocks, which the public API can neither instantiate on page-create nor build — true for the stand-in *and* n8n's Notion node. Options: reviewer applies the template manually, rely on the `Segments`/`Speakers` relation properties already on each Transcription page, or set DB-level grouped views.
+- **Invalid Pitch relations are silently dropped.** Notion ignores a relation to a page outside the Pitches DB rather than erroring, yielding a dangling Transcription. The stand-in only validates `pitchId` *format* (32-hex); validating that it's a real Pitches page at `/uploads` time is a worthwhile hardening.
+
+### Still to build: the real n8n workflows
+
+The stand-in mirrors what n8n must do; the remaining work is authoring the three n8n workflows (Upload webhook, Processing schedule/poll, Delivery Notion-poll) against the same services — the only piece not yet built.
 
 ## 8. Recordings bucket setup (transient)
 
