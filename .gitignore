@@ -5,10 +5,10 @@ node_modules/
 dist/
 api/.aws-sam/
 
-# Environment / secrets
+# Environment / secrets. Per-mode files (.env.development / .env.production) are
+# committed (non-secret URLs); the generic .env and any *.local override (below)
+# stay local-only.
 .env
-.env.*
-!.env.example
 
 # Extension signing key — pins the extension ID; the public half lives in
 # manifest.config.ts, the private half must never be committed.
