@@ -4,7 +4,7 @@ import {
   RECORDER_TIMESLICE_MS,
   RECORDING_MIME_TYPE,
 } from "../shared/constants";
-import { sendMessage, type UploadSession } from "../shared/messages";
+import { sendMessage, type PartTarget, type UploadSession } from "../shared/messages";
 import { createPartBuffer } from "../upload/part-buffer";
 import { createUploadManager } from "../upload/upload-manager";
 
@@ -21,18 +21,28 @@ let stopRequested = false;
 // before `active` is assigned.
 export const isRecording = (): boolean => starting || active != null;
 
-export const startRecording = async (streamId: string, session: UploadSession): Promise<void> => {
+export const startRecording = async (
+  streamId: string,
+  session: UploadSession,
+  token: string,
+  firstPart: PartTarget,
+): Promise<void> => {
   starting = true;
   stopRequested = false;
 
   try {
-    await setUpRecording(streamId, session);
+    await setUpRecording(streamId, session, token, firstPart);
   } finally {
     starting = false;
   }
 };
 
-const setUpRecording = async (streamId: string, session: UploadSession): Promise<void> => {
+const setUpRecording = async (
+  streamId: string,
+  session: UploadSession,
+  token: string,
+  firstPart: PartTarget,
+): Promise<void> => {
   const tabStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: streamId },
@@ -70,7 +80,7 @@ const setUpRecording = async (streamId: string, session: UploadSession): Promise
   }
 
   const buffer = createPartBuffer();
-  const uploads = createUploadManager(session, {
+  const uploads = createUploadManager(session, token, firstPart, {
     onPartUploaded: (partNumber, etag) =>
       sendMessage({ target: "sw", type: "part-uploaded", partNumber, etag }),
   });

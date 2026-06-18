@@ -1,6 +1,7 @@
 import type { Actor } from "xstate";
 
 import { getProfile } from "../profiles/profiles";
+import { getAuthToken } from "../shared/auth-token";
 import { FINISHED_RESET_MS } from "../shared/constants";
 import { extractMeetSlug } from "../shared/meet";
 import { isForTarget, type StopReason } from "../shared/messages";
@@ -19,16 +20,8 @@ import {
 import { restoreRecorderActor } from "../state/actor";
 import type { recorderMachine } from "../state/machine";
 import { createUpload } from "../upload/api-client";
-import { resolveAutoFields } from "./auto-fields";
 import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen-host";
 import { abortPendingUpload, retryPendingUpload } from "./recovery";
-import {
-  dropReview,
-  ensureSlowPolling,
-  onReviewAlarm,
-  pollReviews,
-  startFastPolling,
-} from "./review-poll";
 
 type RecorderActor = Actor<typeof recorderMachine>;
 
@@ -38,7 +31,7 @@ const actorPromise = restoreRecorderActor();
 
 export type StartResult =
   | { status: "started" | "stopped" }
-  | { status: "needs-invocation" | "needs-metadata" | "needs-permission" | "error" };
+  | { status: "needs-invocation" | "needs-metadata" | "needs-permission" | "needs-auth" | "error" };
 
 const STARTABLE_STATES = new Set(["idle", "needsPermission", "finished", "error"]);
 
@@ -82,21 +75,38 @@ const startRecording = async (
     return { status: "needs-permission" };
   }
 
-  try {
-    const session = await createUpload({
-      profileId: profile.id,
-      auto: resolveAutoFields(profile.autoFields, { meetSlug: slug, userId: settings.userId }),
-      fields,
-    });
+  // The offscreen doc can't read chrome.cookies, so the SW resolves the Filadd
+  // JWT here and passes it down with the session.
+  const token = await getAuthToken();
 
-    await setPendingUpload({ session, parts: {}, createdAt: Date.now() });
+  if (token == null) {
+    actor.send({ type: "FAIL", message: "Not signed in to Filadd — open Filadd and log in." });
+    return { status: "needs-auth" };
+  }
+
+  try {
+    const { key, filepath, partNumber, url } = await createUpload(
+      { profileId: profile.id, pitchId: fields.pitchId },
+      token,
+    );
+
+    const session = { key, filepath, profileId: profile.id };
+
+    await setPendingUpload({ session, lastPart: null, createdAt: Date.now() });
     await ensureOffscreenDocument();
     await setRecordingTabId(tab.id ?? null);
 
     actor.send({ type: "START", slug, profileId: profile.id, startedAt: Date.now() });
 
     chrome.runtime
-      .sendMessage({ target: "offscreen", type: "start-capture", streamId, session })
+      .sendMessage({
+        target: "offscreen",
+        type: "start-capture",
+        streamId,
+        session,
+        token,
+        firstPart: { partNumber, url },
+      })
       .catch((error) => {
         console.error("[recorder] failed to reach offscreen document:", error);
         actor.send({ type: "FAIL", message: String(error) });
@@ -227,7 +237,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const pending = await getPendingUpload();
 
         if (pending != null) {
-          pending.parts[message.partNumber] = message.etag;
+          pending.lastPart = { partNumber: message.partNumber, etag: message.etag };
           await setPendingUpload(pending);
         }
 
@@ -238,8 +248,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         actor.send({ type: "UPLOAD_FINISHED" });
         await clearPendingUpload();
         await finishSession(actor);
-        // A review for this recording is now incoming — poll hard for a while.
-        await startFastPolling();
         return undefined;
 
       case "upload-failed":
@@ -270,13 +278,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case "dismiss-error":
         actor.send({ type: "RESET" });
         return undefined;
-
-      case "poll-reviews":
-        return { count: await pollReviews() };
-
-      case "review-submitted":
-        await dropReview(message.key);
-        return undefined;
     }
   };
 
@@ -304,19 +305,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   }
 });
 
-chrome.alarms.onAlarm.addListener(onReviewAlarm);
-
 // storage.session is gone after a browser restart, so the machine rehydrates fresh;
 // the UI snapshot in storage.local must be reset to match. A pending upload ledger
 // in storage.local survives and is surfaced by the popup for recovery.
 chrome.runtime.onStartup.addListener(() => {
   setSnapshot(DEFAULT_SNAPSHOT);
-  ensureSlowPolling();
-  pollReviews();
 });
 
 chrome.runtime.onInstalled.addListener(() => {
   setSnapshot(DEFAULT_SNAPSHOT);
-  ensureSlowPolling();
-  pollReviews();
 });

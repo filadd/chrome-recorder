@@ -1,14 +1,12 @@
 import { PROFILE_IDS, type ProfileId, type RecordingProfile } from "./types";
 
-// Mirrored in api/src/profiles.ts — the server owns its copy as the trust boundary.
+// The UI-facing profile table. The upload config (bucket, key, content type,
+// metadata) is owned by api/src/profiles.ts — the server is the trust boundary.
 export const PROFILES: Record<ProfileId, RecordingProfile> = {
   [PROFILE_IDS.project]: {
     id: PROFILE_IDS.project,
     labelKey: "profile_project_label",
     descriptionKey: "profile_project_desc",
-    bucket: PROFILE_IDS.project,
-    keyTemplate: "projects/{timestamp}-{uuid}.webm",
-    autoFields: ["meetSlug", "timestamp", "userId", "uuid"],
     fields: [
       {
         key: "pitchId",
@@ -18,8 +16,6 @@ export const PROFILES: Record<ProfileId, RecordingProfile> = {
         required: true,
       },
     ],
-    attachAsObjectMetadata: true,
-    contentType: "audio/webm",
   },
 };
 

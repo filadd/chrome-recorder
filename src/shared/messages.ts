@@ -1,10 +1,18 @@
-import type { ProfileId, BucketRef } from "../profiles/types";
+import type { ProfileId } from "../profiles/types";
 
+// file-uploads-api owns the object key (and the internal S3 UploadId); the client
+// only ever holds the public `key` and the presigned URL it needs next.
 export interface UploadSession {
-  uploadId: string;
   key: string;
-  bucketRef: BucketRef;
+  filepath: string;
   profileId: ProfileId;
+}
+
+// One presigned UploadPart URL and the part number it is good for. The create call
+// seeds the first; each recorded part hands back the next.
+export interface PartTarget {
+  partNumber: number;
+  url: string;
 }
 
 export type StopReason = "user" | "leave" | "tab-closed" | "track-ended";
@@ -25,14 +33,19 @@ export type SwMessage =
   | { target: "sw"; type: "upload-failed"; message: string }
   | { target: "sw"; type: "recover-retry" }
   | { target: "sw"; type: "recover-abort" }
-  | { target: "sw"; type: "dismiss-error" }
-  // Refresh the cached pending-reviews queue + badge (popup poke on open).
-  | { target: "sw"; type: "poll-reviews" }
-  // Optimistically drop a just-submitted review from the cached queue + badge.
-  | { target: "sw"; type: "review-submitted"; key: string };
+  | { target: "sw"; type: "dismiss-error" };
 
 export type OffscreenMessage =
-  | { target: "offscreen"; type: "start-capture"; streamId: string; session: UploadSession }
+  | {
+      target: "offscreen";
+      type: "start-capture";
+      streamId: string;
+      session: UploadSession;
+      // The offscreen doc can't read chrome.cookies, so the SW passes the bearer
+      // token (the `auth._token.local` value) and the first presigned part here.
+      token: string;
+      firstPart: PartTarget;
+    }
   | { target: "offscreen"; type: "stop-capture" }
   | { target: "offscreen"; type: "set-mic-muted"; muted: boolean }
   | { target: "offscreen"; type: "ping" };

@@ -1,9 +1,11 @@
-import { abortUpload, completeUpload, listParts } from "../upload/api-client";
+import { getAuthToken } from "../shared/auth-token";
 import { clearPendingUpload, getPendingUpload } from "../shared/storage";
+import { abortUpload, getUploadStatus, recordPart } from "../upload/api-client";
 
 // Recovery finalizes what was already uploaded — capture itself cannot resume after
-// a crash. Our own ETag ledger is authoritative (per AWS guidance); ListParts only
-// confirms the upload still exists server-side.
+// a crash. The server owns the parts ledger now, so recovery just reconciles the
+// session by its key: complete a still-PENDING prefix, or clear an already-finished
+// or vanished session.
 export const retryPendingUpload = async (): Promise<boolean> => {
   const pending = await getPendingUpload();
 
@@ -11,28 +13,55 @@ export const retryPendingUpload = async (): Promise<boolean> => {
     return false;
   }
 
-  const ledger = Object.entries(pending.parts)
-    .map(([partNumber, etag]) => ({ PartNumber: Number(partNumber), ETag: etag }))
-    .sort((a, b) => a.PartNumber - b.PartNumber);
+  const token = await getAuthToken();
 
-  if (ledger.length === 0) {
-    await abortUpload(pending.session).catch(() => undefined);
+  if (token == null) {
+    // No Filadd session to authenticate with — leave the pending upload for a
+    // later retry rather than dropping it.
+    return false;
+  }
+
+  let status: string;
+
+  try {
+    status = (await getUploadStatus(pending.session.key, token)).status;
+  } catch {
+    // The session is gone (404) or unreachable — nothing to finalize.
     await clearPendingUpload();
     return false;
   }
 
-  await listParts(pending.session);
-  await completeUpload(pending.session, ledger);
-  await clearPendingUpload();
+  // Already assembled (or assembling) server-side — done from the client's side.
+  if (status === "COMPLETED" || status === "ASSEMBLING") {
+    await clearPendingUpload();
+    return true;
+  }
 
-  return true;
+  // Finalize the uploaded prefix: re-send the last recorded part with complete:true
+  // (idempotent on a matching ETag).
+  if (status === "PENDING" && pending.lastPart != null) {
+    await recordPart({ key: pending.session.key, ...pending.lastPart, complete: true }, token);
+    await clearPendingUpload();
+    return true;
+  }
+
+  // PENDING with nothing recorded, or a terminal error — nothing useful to finalize.
+  await clearPendingUpload();
+  return false;
 };
 
 export const abortPendingUpload = async (): Promise<void> => {
   const pending = await getPendingUpload();
 
-  if (pending != null) {
-    await abortUpload(pending.session).catch(() => undefined);
-    await clearPendingUpload();
+  if (pending == null) {
+    return;
   }
+
+  const token = await getAuthToken();
+
+  if (token != null) {
+    await abortUpload(pending.session.key, token).catch(() => undefined);
+  }
+
+  await clearPendingUpload();
 };

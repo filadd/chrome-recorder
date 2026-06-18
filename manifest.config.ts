@@ -20,11 +20,26 @@ export default defineManifest({
     128: "icons/icon128.png",
   },
 
-  permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab", "alarms"],
+  // `cookies` + the Filadd frontend origins below let the SW read the
+  // `auth._token.local` JWT (see src/shared/auth-token.ts). `*.amazonaws.com` is
+  // still needed for the presigned part PUTs that go directly to S3. `localhost`
+  // covers the local n8n stand-in and a local Filadd frontend (any port).
+  permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab", "cookies"],
   host_permissions: [
     "http://localhost/*",
+    // Local dev frontends are served over http (dockerfiles VIRTUAL_HOSTs);
+    // prod over https. Both needed so chrome.cookies can read auth._token.local.
+    "http://*.filadd.com/*",
+    "http://*.filadd.cl/*",
+    "http://*.filadd.com.ar/*",
+    "http://*.filadd.com.br/*",
+    "http://*.filadd.com.co/*",
+    "https://*.filadd.com/*",
+    "https://*.filadd.cl/*",
+    "https://*.filadd.com.ar/*",
+    "https://*.filadd.com.br/*",
+    "https://*.filadd.com.co/*",
     "https://*.amazonaws.com/*",
-    "https://*.lambda-url.sa-east-1.on.aws/*",
   ],
 
   background: {

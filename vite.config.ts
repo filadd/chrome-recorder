@@ -13,7 +13,6 @@ export default defineConfig({
       input: {
         offscreen: "src/offscreen/offscreen.html",
         permission: "src/permission/permission.html",
-        review: "src/review/review.html",
       },
     },
   },

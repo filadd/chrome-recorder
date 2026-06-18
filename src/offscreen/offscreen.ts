@@ -15,9 +15,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       }
 
-      startRecording(message.streamId, message.session).catch((error) => {
-        sendMessage({ target: "sw", type: "capture-error", message: String(error) });
-      });
+      startRecording(message.streamId, message.session, message.token, message.firstPart).catch(
+        (error) => {
+          sendMessage({ target: "sw", type: "capture-error", message: String(error) });
+        },
+      );
       break;
 
     case "stop-capture":

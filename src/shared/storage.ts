@@ -1,5 +1,4 @@
 import type { ProfileId } from "../profiles/types";
-import type { ReviewSummary } from "../review/types";
 import type { UploadSession } from "./messages";
 
 export type UiState =
@@ -45,9 +44,12 @@ export interface Settings {
   pitches: PitchEntry[];
 }
 
+// The server owns the parts ledger now, so the client persists only enough to
+// reconcile on restart: the session key + the last part it recorded (to finalize
+// a still-PENDING session with complete:true on recovery).
 export interface PendingUpload {
   session: UploadSession;
-  parts: Record<number, string>;
+  lastPart: { partNumber: number; etag: string } | null;
   createdAt: number;
 }
 
@@ -144,22 +146,6 @@ export const setPendingUpload = (pendingUpload: PendingUpload): Promise<void> =>
 
 export const clearPendingUpload = (): Promise<void> =>
   chrome.storage.local.remove("pendingUpload");
-
-// The SW poller's cached view of "my pending reviews" — the UI renders this
-// snapshot reactively (via onChanged) instead of calling the API itself.
-export interface ReviewQueue {
-  items: ReviewSummary[];
-  polledAt: number | null;
-}
-
-export const DEFAULT_REVIEW_QUEUE: ReviewQueue = { items: [], polledAt: null };
-
-export const getReviewQueue = async (): Promise<ReviewQueue> =>
-  (await chrome.storage.local.get<{ reviewQueue?: ReviewQueue }>("reviewQueue")).reviewQueue ??
-  DEFAULT_REVIEW_QUEUE;
-
-export const setReviewQueue = (reviewQueue: ReviewQueue): Promise<void> =>
-  chrome.storage.local.set({ reviewQueue });
 
 export const getRecordingTabId = async (): Promise<number | null> =>
   (await chrome.storage.session.get<{ recordingTabId?: number }>("recordingTabId"))

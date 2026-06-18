@@ -1,59 +1,57 @@
 import type { ProfileId } from "../profiles/types";
-import { API_BASE_URL, API_TOKEN } from "../shared/constants";
-import type { UploadSession } from "../shared/messages";
+import { API_BASE_URL } from "../shared/constants";
 
-export interface UploadPartRef {
-  PartNumber: number;
-  ETag: string;
-}
-
-const request = async <T>(method: string, path: string, body: unknown): Promise<T> => {
+// The `auth._token.local` cookie value is already the full `Bearer <JWT>` string,
+// so it is sent verbatim as Authorization. The offscreen doc can't read the cookie,
+// so the token is always passed in by the caller (the SW reads it once).
+const request = async <T>(method: string, path: string, token: string, body?: unknown): Promise<T> => {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_TOKEN}`,
+      Authorization: token,
     },
-    body: JSON.stringify(body),
+    body: body != null ? JSON.stringify(body) : undefined,
   });
 
   if (!res.ok) {
     throw new Error(`API ${method} ${path} failed: ${res.status} ${await res.text()}`);
   }
 
-  return res.json() as Promise<T>;
+  return (res.status === 204 ? undefined : await res.json()) as T;
 };
 
-export const createUpload = (payload: {
-  profileId: ProfileId;
-  auto: Record<string, string>;
-  fields: Record<string, string>;
-}): Promise<UploadSession> =>
-  request("POST", "/uploads", payload).then((res) => ({
-    ...(res as Omit<UploadSession, "profileId">),
-    profileId: payload.profileId,
-  }));
+export interface CreateUploadResult {
+  key: string;
+  filepath: string;
+  partNumber: number;
+  url: string;
+}
 
-export const getPartUrl = async (session: UploadSession, partNumber: number): Promise<string> => {
-  const { urls } = await request<{ urls: { partNumber: number; url: string }[] }>(
-    "POST",
-    "/uploads/parts",
-    { ...sessionRef(session), partNumbers: [partNumber] },
-  );
+export interface RecordPartResult {
+  key: string;
+  status: string;
+  partNumber: number | null;
+  url: string | null;
+}
 
-  return urls[0].url;
-};
+export interface UploadStatusResult {
+  status: string;
+  parts: { part_number: number; etag: string }[];
+}
 
-export const completeUpload = (
-  session: UploadSession,
-  parts: UploadPartRef[],
-): Promise<{ key: string; location: string }> =>
-  request("POST", "/uploads/complete", { ...sessionRef(session), parts });
+export const createUpload = (
+  payload: { profileId: ProfileId; pitchId: string },
+  token: string,
+): Promise<CreateUploadResult> => request("POST", "/uploads", token, payload);
 
-export const abortUpload = (session: UploadSession): Promise<{ aborted: boolean }> =>
-  request("DELETE", "/uploads", sessionRef(session));
+export const recordPart = (
+  input: { key: string; partNumber: number; etag: string; complete?: boolean },
+  token: string,
+): Promise<RecordPartResult> => request("POST", "/uploads/part", token, input);
 
-export const listParts = (session: UploadSession): Promise<{ parts: UploadPartRef[] }> =>
-  request("POST", "/uploads/list-parts", sessionRef(session));
+export const getUploadStatus = (key: string, token: string): Promise<UploadStatusResult> =>
+  request("GET", `/uploads/${encodeURIComponent(key)}`, token);
 
-const sessionRef = ({ bucketRef, key, uploadId }: UploadSession) => ({ bucketRef, key, uploadId });
+export const abortUpload = (key: string, token: string): Promise<void> =>
+  request("DELETE", `/uploads/${encodeURIComponent(key)}`, token);

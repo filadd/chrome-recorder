@@ -6,19 +6,6 @@ export const PROFILE_IDS = {
 
 export type ProfileId = (typeof PROFILE_IDS)[keyof typeof PROFILE_IDS];
 
-// Logical bucket reference — the API maps it to a real bucket via env vars.
-// The client never names a bucket directly.
-export type BucketRef = ProfileId;
-
-export const AUTO_FIELDS = {
-  meetSlug: "meetSlug",
-  timestamp: "timestamp",
-  userId: "userId",
-  uuid: "uuid",
-} as const;
-
-export type AutoField = (typeof AUTO_FIELDS)[keyof typeof AUTO_FIELDS];
-
 export interface ProfileField {
   key: string;
   labelKey: string;
@@ -27,15 +14,13 @@ export interface ProfileField {
   required: boolean;
 }
 
+// The client only carries the UI shape and the user-provided fields now — the
+// object key, destination bucket, content type, and metadata are all rendered
+// server-side by the n8n stand-in / file-uploads-api (the trust boundary).
 export interface RecordingProfile {
   id: ProfileId;
   labelKey: string;
   descriptionKey: string;
-  bucket: BucketRef;
-  keyTemplate: string;
-  autoFields: AutoField[];
   fields: ProfileField[];
-  attachAsObjectMetadata: boolean;
-  contentType: "audio/webm";
   requiresMeetTab?: boolean;
 }
