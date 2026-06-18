@@ -1,5 +1,5 @@
 import { t } from "../../shared/i18n";
-import { sendMessage } from "../../shared/messages";
+import { MESSAGE_TARGET, sendMessage, SW_MESSAGE_TYPE } from "../../shared/messages";
 
 export const RecoveryBanner = () => (
   <div className="recovery">
@@ -7,13 +7,13 @@ export const RecoveryBanner = () => (
     <div className="recovery-row">
       <button
         className="recovery-btn retry"
-        onClick={() => sendMessage({ target: "sw", type: "recover-retry" })}
+        onClick={() => sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.recoverRetry })}
       >
         {t("popup_recover_retry")}
       </button>
       <button
         className="recovery-btn discard"
-        onClick={() => sendMessage({ target: "sw", type: "recover-abort" })}
+        onClick={() => sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.recoverAbort })}
       >
         {t("popup_recover_abort")}
       </button>

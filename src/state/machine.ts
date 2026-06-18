@@ -2,6 +2,7 @@ import { assign, setup } from "xstate";
 
 import type { ProfileId } from "../profiles/types";
 import type { StopReason } from "../shared/messages";
+import { UI_STATE } from "../shared/storage";
 
 export interface MachineContext {
   slug: string | null;
@@ -12,18 +13,36 @@ export interface MachineContext {
   error: string | null;
 }
 
+// Recording-lifecycle events as a const map (derived type), so senders reference a
+// name instead of a bare string. State node names come from UI_STATE.
+export const RECORDER_EVENT = {
+  start: "START",
+  needsPermission: "NEEDS_PERMISSION",
+  micGranted: "MIC_GRANTED",
+  captureStarted: "CAPTURE_STARTED",
+  stop: "STOP",
+  captureStopped: "CAPTURE_STOPPED",
+  micMuteChanged: "MIC_MUTE_CHANGED",
+  partUploaded: "PART_UPLOADED",
+  uploadFinished: "UPLOAD_FINISHED",
+  fail: "FAIL",
+  reset: "RESET",
+} as const;
+
+export type RecorderEventType = (typeof RECORDER_EVENT)[keyof typeof RECORDER_EVENT];
+
 export type MachineEvent =
-  | { type: "START"; slug: string | null; profileId: ProfileId; startedAt: number }
-  | { type: "NEEDS_PERMISSION" }
-  | { type: "MIC_GRANTED" }
-  | { type: "CAPTURE_STARTED" }
-  | { type: "STOP"; reason: StopReason }
-  | { type: "CAPTURE_STOPPED" }
-  | { type: "MIC_MUTE_CHANGED"; muted: boolean }
-  | { type: "PART_UPLOADED"; partNumber: number }
-  | { type: "UPLOAD_FINISHED" }
-  | { type: "FAIL"; message: string }
-  | { type: "RESET" };
+  | { type: typeof RECORDER_EVENT.start; slug: string | null; profileId: ProfileId; startedAt: number }
+  | { type: typeof RECORDER_EVENT.needsPermission }
+  | { type: typeof RECORDER_EVENT.micGranted }
+  | { type: typeof RECORDER_EVENT.captureStarted }
+  | { type: typeof RECORDER_EVENT.stop; reason: StopReason }
+  | { type: typeof RECORDER_EVENT.captureStopped }
+  | { type: typeof RECORDER_EVENT.micMuteChanged; muted: boolean }
+  | { type: typeof RECORDER_EVENT.partUploaded; partNumber: number }
+  | { type: typeof RECORDER_EVENT.uploadFinished }
+  | { type: typeof RECORDER_EVENT.fail; message: string }
+  | { type: typeof RECORDER_EVENT.reset };
 
 const initialContext: MachineContext = {
   slug: null,
@@ -41,21 +60,21 @@ export const recorderMachine = setup({
   },
 }).createMachine({
   id: "recorder",
-  initial: "idle",
+  initial: UI_STATE.idle,
   context: initialContext,
 
   on: {
-    FAIL: {
-      target: ".error",
+    [RECORDER_EVENT.fail]: {
+      target: `.${UI_STATE.error}`,
       actions: assign({ error: ({ event }) => event.message }),
     },
   },
 
   states: {
-    idle: {
+    [UI_STATE.idle]: {
       on: {
-        START: {
-          target: "arming",
+        [RECORDER_EVENT.start]: {
+          target: UI_STATE.arming,
           actions: assign({
             slug: ({ event }) => event.slug,
             profileId: ({ event }) => event.profileId,
@@ -65,61 +84,61 @@ export const recorderMachine = setup({
             error: () => null,
           }),
         },
-        NEEDS_PERMISSION: "needsPermission",
+        [RECORDER_EVENT.needsPermission]: UI_STATE.needsPermission,
       },
     },
 
-    needsPermission: {
-      on: { MIC_GRANTED: "idle", RESET: "idle" },
+    [UI_STATE.needsPermission]: {
+      on: { [RECORDER_EVENT.micGranted]: UI_STATE.idle, [RECORDER_EVENT.reset]: UI_STATE.idle },
     },
 
-    arming: {
+    [UI_STATE.arming]: {
       on: {
-        CAPTURE_STARTED: "recording",
-        STOP: "idle",
+        [RECORDER_EVENT.captureStarted]: UI_STATE.recording,
+        [RECORDER_EVENT.stop]: UI_STATE.idle,
       },
     },
 
-    recording: {
+    [UI_STATE.recording]: {
       on: {
-        STOP: "stopping",
-        MIC_MUTE_CHANGED: {
+        [RECORDER_EVENT.stop]: UI_STATE.stopping,
+        [RECORDER_EVENT.micMuteChanged]: {
           actions: assign({ micMuted: ({ event }) => event.muted }),
         },
-        PART_UPLOADED: {
+        [RECORDER_EVENT.partUploaded]: {
           actions: assign({ partsDone: ({ event }) => event.partNumber }),
         },
       },
     },
 
-    stopping: {
+    [UI_STATE.stopping]: {
       on: {
-        CAPTURE_STOPPED: "finalizing",
-        MIC_MUTE_CHANGED: {
+        [RECORDER_EVENT.captureStopped]: UI_STATE.finalizing,
+        [RECORDER_EVENT.micMuteChanged]: {
           actions: assign({ micMuted: ({ event }) => event.muted }),
         },
-        PART_UPLOADED: {
+        [RECORDER_EVENT.partUploaded]: {
           actions: assign({ partsDone: ({ event }) => event.partNumber }),
         },
-        UPLOAD_FINISHED: "finished",
+        [RECORDER_EVENT.uploadFinished]: UI_STATE.finished,
       },
     },
 
-    finalizing: {
+    [UI_STATE.finalizing]: {
       on: {
-        PART_UPLOADED: {
+        [RECORDER_EVENT.partUploaded]: {
           actions: assign({ partsDone: ({ event }) => event.partNumber }),
         },
-        UPLOAD_FINISHED: "finished",
+        [RECORDER_EVENT.uploadFinished]: UI_STATE.finished,
       },
     },
 
-    finished: {
-      on: { RESET: { target: "idle", actions: assign(() => initialContext) } },
+    [UI_STATE.finished]: {
+      on: { [RECORDER_EVENT.reset]: { target: UI_STATE.idle, actions: assign(() => initialContext) } },
     },
 
-    error: {
-      on: { RESET: { target: "idle", actions: assign(() => initialContext) } },
+    [UI_STATE.error]: {
+      on: { [RECORDER_EVENT.reset]: { target: UI_STATE.idle, actions: assign(() => initialContext) } },
     },
   },
 });

@@ -21,6 +21,21 @@ const request = async <T>(method: string, path: string, token: string, body?: un
   return (res.status === 204 ? undefined : await res.json()) as T;
 };
 
+// The multipart session status, owned by file-uploads-api (Redis). PENDING while
+// parts upload; ASSEMBLING during CompleteMultipartUpload + post-processing; then a
+// terminal state. Mirrored as a const map so callers compare against names.
+export const UPLOAD_STATUS = {
+  pending: "PENDING",
+  assembling: "ASSEMBLING",
+  completed: "COMPLETED",
+  aborted: "ABORTED",
+  validationError: "VALIDATION_ERROR",
+  transcodingError: "TRANSCODING_ERROR",
+  uploadError: "UPLOAD_ERROR",
+} as const;
+
+export type UploadStatus = (typeof UPLOAD_STATUS)[keyof typeof UPLOAD_STATUS];
+
 export interface CreateUploadResult {
   key: string;
   filepath: string;
@@ -30,13 +45,13 @@ export interface CreateUploadResult {
 
 export interface RecordPartResult {
   key: string;
-  status: string;
+  status: UploadStatus;
   partNumber: number | null;
   url: string | null;
 }
 
 export interface UploadStatusResult {
-  status: string;
+  status: UploadStatus;
   parts: { part_number: number; etag: string }[];
 }
 

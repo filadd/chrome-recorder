@@ -6,14 +6,19 @@ import {
   UPLOAD_POLL_MAX_ATTEMPTS,
 } from "../shared/constants";
 import type { PartTarget, UploadSession } from "../shared/messages";
-import { getUploadStatus, recordPart } from "./api-client";
+import { getUploadStatus, recordPart, UPLOAD_STATUS, type UploadStatus } from "./api-client";
 import type { CutPart } from "./part-buffer";
 
 interface UploadManagerCallbacks {
   onPartUploaded: (partNumber: number, etag: string) => void;
 }
 
-const TERMINAL_ERRORS = new Set(["VALIDATION_ERROR", "TRANSCODING_ERROR", "UPLOAD_ERROR", "ABORTED"]);
+const TERMINAL_ERRORS = new Set<UploadStatus>([
+  UPLOAD_STATUS.validationError,
+  UPLOAD_STATUS.transcodingError,
+  UPLOAD_STATUS.uploadError,
+  UPLOAD_STATUS.aborted,
+]);
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -89,11 +94,11 @@ export const createUploadManager = (
     });
   };
 
-  const pollUntilTerminal = async (): Promise<string> => {
+  const pollUntilTerminal = async (): Promise<UploadStatus> => {
     for (let attempt = 0; attempt < UPLOAD_POLL_MAX_ATTEMPTS; attempt += 1) {
       const { status } = await getUploadStatus(session.key, token);
 
-      if (status === "COMPLETED") {
+      if (status === UPLOAD_STATUS.completed) {
         return status;
       }
 
@@ -106,13 +111,13 @@ export const createUploadManager = (
 
     // Still ASSEMBLING past the cap: the upload itself succeeded, the server just
     // hasn't finished assembling/post-processing — don't fail the recording.
-    return "ASSEMBLING";
+    return UPLOAD_STATUS.assembling;
   };
 
   return {
     enqueue,
 
-    async finalize(finalPart: CutPart | null): Promise<{ key: string; status: string }> {
+    async finalize(finalPart: CutPart | null): Promise<{ key: string; status: UploadStatus }> {
       await queue;
 
       if (failure != null) {

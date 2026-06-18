@@ -1,13 +1,19 @@
-import { isForTarget, sendMessage } from "../shared/messages";
+import {
+  isForTarget,
+  MESSAGE_TARGET,
+  OFFSCREEN_MESSAGE_TYPE,
+  sendMessage,
+  SW_MESSAGE_TYPE,
+} from "../shared/messages";
 import { isRecording, setMicMuted, startRecording, stopRecording } from "./recorder";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (!isForTarget(message, "offscreen")) {
+  if (!isForTarget(message, MESSAGE_TARGET.offscreen)) {
     return;
   }
 
   switch (message.type) {
-    case "start-capture":
+    case OFFSCREEN_MESSAGE_TYPE.startCapture:
       // A duplicate start would acquire a second set of streams and orphan the
       // first one — leaving the mic indicator on with nothing recording.
       if (isRecording()) {
@@ -17,20 +23,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       startRecording(message.streamId, message.session, message.token, message.firstPart).catch(
         (error) => {
-          sendMessage({ target: "sw", type: "capture-error", message: String(error) });
+          sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureError, message: String(error) });
         },
       );
       break;
 
-    case "stop-capture":
+    case OFFSCREEN_MESSAGE_TYPE.stopCapture:
       stopRecording();
       break;
 
-    case "set-mic-muted":
+    case OFFSCREEN_MESSAGE_TYPE.setMicMuted:
       setMicMuted(message.muted);
       break;
 
-    case "ping":
+    case OFFSCREEN_MESSAGE_TYPE.ping:
       sendResponse({ recording: isRecording() });
       break;
   }

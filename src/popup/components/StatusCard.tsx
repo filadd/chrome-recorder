@@ -1,12 +1,12 @@
 import { t } from "../../shared/i18n";
-import type { UiSnapshot } from "../../shared/storage";
+import { UI_STATE, type UiSnapshot } from "../../shared/storage";
 
 interface Props {
   snapshot: UiSnapshot;
 }
 
 export const StatusCard = ({ snapshot }: Props) => {
-  const ok = snapshot.state === "finished";
+  const ok = snapshot.state === UI_STATE.finished;
 
   return (
     <div className={`status-card ${ok ? "ok" : "err"}`}>

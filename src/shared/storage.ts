@@ -1,15 +1,20 @@
 import type { ProfileId } from "../profiles/types";
 import type { UploadSession } from "./messages";
 
-export type UiState =
-  | "idle"
-  | "needsPermission"
-  | "arming"
-  | "recording"
-  | "stopping"
-  | "finalizing"
-  | "finished"
-  | "error";
+// The recording-lifecycle states, shared with the XState machine (its state node
+// names are these values) and the UI snapshot.
+export const UI_STATE = {
+  idle: "idle",
+  needsPermission: "needsPermission",
+  arming: "arming",
+  recording: "recording",
+  stopping: "stopping",
+  finalizing: "finalizing",
+  finished: "finished",
+  error: "error",
+} as const;
+
+export type UiState = (typeof UI_STATE)[keyof typeof UI_STATE];
 
 export interface UiSnapshot {
   state: UiState;
@@ -99,7 +104,7 @@ export const normalizeSettings = (stored: Partial<Settings> | undefined): Settin
 };
 
 export const DEFAULT_SNAPSHOT: UiSnapshot = {
-  state: "idle",
+  state: UI_STATE.idle,
   slug: null,
   profileId: "project",
   startedAt: null,

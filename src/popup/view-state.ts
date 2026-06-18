@@ -1,5 +1,5 @@
 import { getProfile } from "../profiles/profiles";
-import type { Settings, UiSnapshot } from "../shared/storage";
+import { UI_STATE, type Settings, type UiSnapshot } from "../shared/storage";
 
 export const CTA_KINDS = {
   start: "start",
@@ -20,8 +20,13 @@ export interface PopupView {
   canStart: boolean;
 }
 
-const BUSY_STATES: UiSnapshot["state"][] = ["arming", "recording", "stopping", "finalizing"];
-const DONE_STATES: UiSnapshot["state"][] = ["finished", "error"];
+const BUSY_STATES: UiSnapshot["state"][] = [
+  UI_STATE.arming,
+  UI_STATE.recording,
+  UI_STATE.stopping,
+  UI_STATE.finalizing,
+];
+const DONE_STATES: UiSnapshot["state"][] = [UI_STATE.finished, UI_STATE.error];
 
 export const deriveView = (
   snapshot: UiSnapshot,

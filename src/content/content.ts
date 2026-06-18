@@ -1,6 +1,13 @@
 import { extractMeetSlug } from "../shared/meet";
-import { isForTarget, sendMessage } from "../shared/messages";
-import { getSnapshot } from "../shared/storage";
+import {
+  CONTENT_MESSAGE_TYPE,
+  isForTarget,
+  MESSAGE_TARGET,
+  sendMessage,
+  STOP_REASON,
+  SW_MESSAGE_TYPE,
+} from "../shared/messages";
+import { getSnapshot, UI_STATE } from "../shared/storage";
 import { watchCallEnd } from "./leave-detection";
 import { getMicMuted, watchMicMute } from "./mute-detection";
 import { mountOverlay } from "./overlay";
@@ -11,17 +18,17 @@ if (extractMeetSlug(location.href) != null) {
   watchCallEnd(async () => {
     const { state } = await getSnapshot();
 
-    if (state === "recording" || state === "arming") {
-      sendMessage({ target: "sw", type: "stop-recording", reason: "leave" });
+    if (state === UI_STATE.recording || state === UI_STATE.arming) {
+      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.stopRecording, reason: STOP_REASON.leave });
     }
   });
 
   watchMicMute((muted) => {
-    sendMessage({ target: "sw", type: "mic-mute-changed", muted });
+    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.micMuteChanged, muted });
   });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (isForTarget(message, "content") && message.type === "query-mic-mute") {
+    if (isForTarget(message, MESSAGE_TARGET.content) && message.type === CONTENT_MESSAGE_TYPE.queryMicMute) {
       sendResponse({ muted: getMicMuted() });
     }
   });

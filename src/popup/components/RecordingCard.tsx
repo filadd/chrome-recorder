@@ -1,5 +1,5 @@
 import { t } from "../../shared/i18n";
-import type { UiSnapshot } from "../../shared/storage";
+import { UI_STATE, type UiSnapshot } from "../../shared/storage";
 import { useElapsedTimer } from "../hooks/useElapsedTimer";
 
 interface Props {
@@ -8,8 +8,8 @@ interface Props {
 }
 
 export const RecordingCard = ({ snapshot, onStop }: Props) => {
-  const recording = snapshot.state === "recording";
-  const stoppable = recording || snapshot.state === "arming";
+  const recording = snapshot.state === UI_STATE.recording;
+  const stoppable = recording || snapshot.state === UI_STATE.arming;
   const elapsed = useElapsedTimer(recording ? snapshot.startedAt : null);
 
   return (
@@ -24,7 +24,7 @@ export const RecordingCard = ({ snapshot, onStop }: Props) => {
         <span className="rec-muted">{t("overlay_mic_muted")}</span>
       ) : null}
 
-      {snapshot.state === "finalizing" ? (
+      {snapshot.state === UI_STATE.finalizing ? (
         <>
           <div className="upload-track">
             <div className="upload-fill" />

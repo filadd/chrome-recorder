@@ -1,6 +1,6 @@
 import { getAuthToken } from "../shared/auth-token";
 import { clearPendingUpload, getPendingUpload } from "../shared/storage";
-import { abortUpload, getUploadStatus, recordPart } from "../upload/api-client";
+import { abortUpload, getUploadStatus, recordPart, UPLOAD_STATUS } from "../upload/api-client";
 
 // Recovery finalizes what was already uploaded — capture itself cannot resume after
 // a crash. The server owns the parts ledger now, so recovery just reconciles the
@@ -32,14 +32,14 @@ export const retryPendingUpload = async (): Promise<boolean> => {
   }
 
   // Already assembled (or assembling) server-side — done from the client's side.
-  if (status === "COMPLETED" || status === "ASSEMBLING") {
+  if (status === UPLOAD_STATUS.completed || status === UPLOAD_STATUS.assembling) {
     await clearPendingUpload();
     return true;
   }
 
   // Finalize the uploaded prefix: re-send the last recorded part with complete:true
   // (idempotent on a matching ETag).
-  if (status === "PENDING" && pending.lastPart != null) {
+  if (status === UPLOAD_STATUS.pending && pending.lastPart != null) {
     await recordPart({ key: pending.session.key, ...pending.lastPart, complete: true }, token);
     await clearPendingUpload();
     return true;

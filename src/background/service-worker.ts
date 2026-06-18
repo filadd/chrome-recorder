@@ -4,7 +4,15 @@ import { getProfile } from "../profiles/profiles";
 import { getAuthToken } from "../shared/auth-token";
 import { FINISHED_RESET_MS } from "../shared/constants";
 import { extractMeetSlug } from "../shared/meet";
-import { isForTarget, type StopReason } from "../shared/messages";
+import {
+  CONTENT_MESSAGE_TYPE,
+  isForTarget,
+  MESSAGE_TARGET,
+  OFFSCREEN_MESSAGE_TYPE,
+  STOP_REASON,
+  SW_MESSAGE_TYPE,
+  type StopReason,
+} from "../shared/messages";
 import {
   clearPendingUpload,
   getMicGranted,
@@ -16,24 +24,41 @@ import {
   setRecordingTabId,
   setSnapshot,
   DEFAULT_SNAPSHOT,
+  UI_STATE,
 } from "../shared/storage";
 import { restoreRecorderActor } from "../state/actor";
-import type { recorderMachine } from "../state/machine";
+import { RECORDER_EVENT, type recorderMachine } from "../state/machine";
 import { createUpload } from "../upload/api-client";
 import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen-host";
 import { abortPendingUpload, retryPendingUpload } from "./recovery";
 
 type RecorderActor = Actor<typeof recorderMachine>;
 
+// The outcome of a start/stop attempt, reported back to the popup.
+export const START_RESULT_STATUS = {
+  started: "started",
+  stopped: "stopped",
+  needsInvocation: "needs-invocation",
+  needsMetadata: "needs-metadata",
+  needsPermission: "needs-permission",
+  needsAuth: "needs-auth",
+  error: "error",
+} as const;
+
+export type StartResultStatus = (typeof START_RESULT_STATUS)[keyof typeof START_RESULT_STATUS];
+
+export type StartResult = { status: StartResultStatus };
+
 // Listeners must be registered synchronously on every SW wake-up; the actor promise
 // is created eagerly and awaited inside handlers.
 const actorPromise = restoreRecorderActor();
 
-export type StartResult =
-  | { status: "started" | "stopped" }
-  | { status: "needs-invocation" | "needs-metadata" | "needs-permission" | "needs-auth" | "error" };
-
-const STARTABLE_STATES = new Set(["idle", "needsPermission", "finished", "error"]);
+const STARTABLE_STATES = new Set<string>([
+  UI_STATE.idle,
+  UI_STATE.needsPermission,
+  UI_STATE.finished,
+  UI_STATE.error,
+]);
 
 const startRecording = async (
   actor: RecorderActor,
@@ -48,8 +73,8 @@ const startRecording = async (
     streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
   } catch (error) {
     console.warn("[recorder] getMediaStreamId rejected:", error);
-    actor.send({ type: "FAIL", message: String(error) });
-    return { status: "needs-invocation" };
+    actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+    return { status: START_RESULT_STATUS.needsInvocation };
   }
 
   const settings = await getSettings();
@@ -57,7 +82,7 @@ const startRecording = async (
   const slug = extractMeetSlug(tab.url);
 
   if (profile.requiresMeetTab && slug == null) {
-    return { status: "error" };
+    return { status: START_RESULT_STATUS.error };
   }
 
   const fields = settings.meetingFields.values[profile.id] ?? {};
@@ -66,13 +91,13 @@ const startRecording = async (
   );
 
   if (missingRequired) {
-    return { status: "needs-metadata" };
+    return { status: START_RESULT_STATUS.needsMetadata };
   }
 
   if (!(await getMicGranted())) {
-    actor.send({ type: "NEEDS_PERMISSION" });
+    actor.send({ type: RECORDER_EVENT.needsPermission });
     chrome.tabs.create({ url: chrome.runtime.getURL("src/permission/permission.html") });
-    return { status: "needs-permission" };
+    return { status: START_RESULT_STATUS.needsPermission };
   }
 
   // The offscreen doc can't read chrome.cookies, so the SW resolves the Filadd
@@ -80,8 +105,8 @@ const startRecording = async (
   const token = await getAuthToken();
 
   if (token == null) {
-    actor.send({ type: "FAIL", message: "Not signed in to Filadd — open Filadd and log in." });
-    return { status: "needs-auth" };
+    actor.send({ type: RECORDER_EVENT.fail, message: "Not signed in to Filadd — open Filadd and log in." });
+    return { status: START_RESULT_STATUS.needsAuth };
   }
 
   try {
@@ -96,12 +121,12 @@ const startRecording = async (
     await ensureOffscreenDocument();
     await setRecordingTabId(tab.id ?? null);
 
-    actor.send({ type: "START", slug, profileId: profile.id, startedAt: Date.now() });
+    actor.send({ type: RECORDER_EVENT.start, slug, profileId: profile.id, startedAt: Date.now() });
 
     chrome.runtime
       .sendMessage({
-        target: "offscreen",
-        type: "start-capture",
+        target: MESSAGE_TARGET.offscreen,
+        type: OFFSCREEN_MESSAGE_TYPE.startCapture,
         streamId,
         session,
         token,
@@ -109,22 +134,24 @@ const startRecording = async (
       })
       .catch((error) => {
         console.error("[recorder] failed to reach offscreen document:", error);
-        actor.send({ type: "FAIL", message: String(error) });
+        actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
       });
 
-    return { status: "started" };
+    return { status: START_RESULT_STATUS.started };
   } catch (error) {
     console.error("[recorder] start failed:", error);
-    actor.send({ type: "FAIL", message: String(error) });
-    return { status: "error" };
+    actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+    return { status: START_RESULT_STATUS.error };
   }
 };
 
 const stopRecording = (actor: RecorderActor, reason: StopReason): StartResult => {
-  actor.send({ type: "STOP", reason });
-  chrome.runtime.sendMessage({ target: "offscreen", type: "stop-capture" }).catch(() => undefined);
+  actor.send({ type: RECORDER_EVENT.stop, reason });
+  chrome.runtime
+    .sendMessage({ target: MESSAGE_TARGET.offscreen, type: OFFSCREEN_MESSAGE_TYPE.stopCapture })
+    .catch(() => undefined);
 
-  return { status: "stopped" };
+  return { status: START_RESULT_STATUS.stopped };
 };
 
 const toggleRecording = async (
@@ -133,32 +160,32 @@ const toggleRecording = async (
 ): Promise<StartResult> => {
   const state = String(actor.getSnapshot().value);
 
-  if (state === "recording" || state === "arming") {
-    return stopRecording(actor, "user");
+  if (state === UI_STATE.recording || state === UI_STATE.arming) {
+    return stopRecording(actor, STOP_REASON.user);
   }
 
   if (STARTABLE_STATES.has(state)) {
-    if (state === "finished" || state === "error") {
-      actor.send({ type: "RESET" });
+    if (state === UI_STATE.finished || state === UI_STATE.error) {
+      actor.send({ type: RECORDER_EVENT.reset });
     }
 
-    if (state === "needsPermission") {
-      actor.send({ type: "MIC_GRANTED" });
+    if (state === UI_STATE.needsPermission) {
+      actor.send({ type: RECORDER_EVENT.micGranted });
     }
 
     return startRecording(actor, tab);
   }
 
-  return { status: "error" };
+  return { status: START_RESULT_STATUS.error };
 };
 
 const applyMicMute = (actor: RecorderActor, muted: boolean): void => {
   const state = String(actor.getSnapshot().value);
 
-  if (state === "recording" || state === "stopping") {
-    actor.send({ type: "MIC_MUTE_CHANGED", muted });
+  if (state === UI_STATE.recording || state === UI_STATE.stopping) {
+    actor.send({ type: RECORDER_EVENT.micMuteChanged, muted });
     chrome.runtime
-      .sendMessage({ target: "offscreen", type: "set-mic-muted", muted })
+      .sendMessage({ target: MESSAGE_TARGET.offscreen, type: OFFSCREEN_MESSAGE_TYPE.setMicMuted, muted })
       .catch(() => undefined);
   }
 };
@@ -167,11 +194,11 @@ const finishSession = async (actor: RecorderActor): Promise<void> => {
   await setRecordingTabId(null);
   await closeOffscreenDocument();
 
-  setTimeout(() => actor.send({ type: "RESET" }), FINISHED_RESET_MS);
+  setTimeout(() => actor.send({ type: RECORDER_EVENT.reset }), FINISHED_RESET_MS);
 };
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (!isForTarget(message, "sw")) {
+  if (!isForTarget(message, MESSAGE_TARGET.sw)) {
     return;
   }
 
@@ -179,33 +206,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const actor = await actorPromise;
 
     switch (message.type) {
-      case "toggle-recording": {
+      case SW_MESSAGE_TYPE.toggleRecording: {
         const tab =
           sender.tab ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
 
-        return tab == null ? { status: "error" } : toggleRecording(actor, tab);
+        return tab == null ? { status: START_RESULT_STATUS.error } : toggleRecording(actor, tab);
       }
 
-      case "stop-recording":
+      case SW_MESSAGE_TYPE.stopRecording:
         return stopRecording(actor, message.reason);
 
-      case "mic-granted":
+      case SW_MESSAGE_TYPE.micGranted:
         await setMicGranted(true);
-        actor.send({ type: "MIC_GRANTED" });
+        actor.send({ type: RECORDER_EVENT.micGranted });
         return undefined;
 
-      case "close-permission-tab":
+      case SW_MESSAGE_TYPE.closePermissionTab:
         if (sender.tab?.id != null) {
           await chrome.tabs.remove(sender.tab.id);
         }
         return undefined;
 
-      case "mic-mute-changed":
+      case SW_MESSAGE_TYPE.micMuteChanged:
         applyMicMute(actor, message.muted);
         return undefined;
 
-      case "capture-started": {
-        actor.send({ type: "CAPTURE_STARTED" });
+      case SW_MESSAGE_TYPE.captureStarted: {
+        actor.send({ type: RECORDER_EVENT.captureStarted });
 
         // The user may have been muted in Meet before the recording started;
         // mute changes are only pushed on transitions, so sync the initial state.
@@ -213,7 +240,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (tabId != null) {
           chrome.tabs
-            .sendMessage(tabId, { target: "content", type: "query-mic-mute" })
+            .sendMessage(tabId, { target: MESSAGE_TARGET.content, type: CONTENT_MESSAGE_TYPE.queryMicMute })
             .then((response) => {
               const muted = (response as { muted: boolean | null } | undefined)?.muted;
 
@@ -227,12 +254,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return undefined;
       }
 
-      case "capture-stopped":
-        actor.send({ type: "CAPTURE_STOPPED" });
+      case SW_MESSAGE_TYPE.captureStopped:
+        actor.send({ type: RECORDER_EVENT.captureStopped });
         return undefined;
 
-      case "part-uploaded": {
-        actor.send({ type: "PART_UPLOADED", partNumber: message.partNumber });
+      case SW_MESSAGE_TYPE.partUploaded: {
+        actor.send({ type: RECORDER_EVENT.partUploaded, partNumber: message.partNumber });
 
         const pending = await getPendingUpload();
 
@@ -244,39 +271,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return undefined;
       }
 
-      case "upload-finished":
-        actor.send({ type: "UPLOAD_FINISHED" });
+      case SW_MESSAGE_TYPE.uploadFinished:
+        actor.send({ type: RECORDER_EVENT.uploadFinished });
         await clearPendingUpload();
         await finishSession(actor);
         return undefined;
 
-      case "upload-failed":
+      case SW_MESSAGE_TYPE.uploadFailed:
         console.error("[recorder] upload failed:", message.message);
-        actor.send({ type: "FAIL", message: message.message });
+        actor.send({ type: RECORDER_EVENT.fail, message: message.message });
         await setRecordingTabId(null);
         await closeOffscreenDocument();
         return undefined;
 
-      case "capture-error":
+      case SW_MESSAGE_TYPE.captureError:
         console.error("[recorder] capture error:", message.message);
-        actor.send({ type: "FAIL", message: message.message });
+        actor.send({ type: RECORDER_EVENT.fail, message: message.message });
         await setRecordingTabId(null);
         await closeOffscreenDocument();
         return undefined;
 
-      case "recover-retry":
+      case SW_MESSAGE_TYPE.recoverRetry:
         try {
           return { recovered: await retryPendingUpload() };
         } catch (error) {
           return { recovered: false, error: String(error) };
         }
 
-      case "recover-abort":
+      case SW_MESSAGE_TYPE.recoverAbort:
         await abortPendingUpload();
         return undefined;
 
-      case "dismiss-error":
-        actor.send({ type: "RESET" });
+      case SW_MESSAGE_TYPE.dismissError:
+        actor.send({ type: RECORDER_EVENT.reset });
         return undefined;
     }
   };
@@ -288,7 +315,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   if (tabId === (await getRecordingTabId())) {
-    stopRecording(await actorPromise, "tab-closed");
+    stopRecording(await actorPromise, STOP_REASON.tabClosed);
   }
 });
 
@@ -301,7 +328,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   const { slug } = actor.getSnapshot().context;
 
   if (extractMeetSlug(changeInfo.url) !== slug) {
-    stopRecording(actor, "tab-closed");
+    stopRecording(actor, STOP_REASON.tabClosed);
   }
 });
 

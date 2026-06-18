@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { t } from "../../shared/i18n";
-import { sendMessage } from "../../shared/messages";
+import { MESSAGE_TARGET, sendMessage, SW_MESSAGE_TYPE } from "../../shared/messages";
 
 type Result = "pending" | "granted" | "denied";
 
@@ -16,10 +16,13 @@ export const PermissionPage = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
 
-      await sendMessage({ target: "sw", type: "mic-granted" });
+      await sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.micGranted });
       setResult("granted");
 
-      setTimeout(() => sendMessage({ target: "sw", type: "close-permission-tab" }), 1200);
+      setTimeout(
+        () => sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.closePermissionTab }),
+        1200,
+      );
     } catch {
       setResult("denied");
     }

@@ -1,5 +1,5 @@
 import { t } from "../shared/i18n";
-import { getSnapshot, onSnapshotChange, type UiSnapshot } from "../shared/storage";
+import { getSnapshot, onSnapshotChange, UI_STATE, type UiSnapshot } from "../shared/storage";
 
 const OVERLAY_STYLE = `
   :host {
@@ -102,30 +102,30 @@ export const mountOverlay = (): void => {
 
     const { state, startedAt, micMuted, error } = snapshot;
 
-    pill.classList.toggle("recording", state === "recording");
-    pill.classList.toggle("attention", state === "idle" || state === "needsPermission");
-    pill.classList.toggle("error", state === "error");
-    dot.classList.toggle("hidden", state !== "recording" && state !== "arming");
+    pill.classList.toggle("recording", state === UI_STATE.recording);
+    pill.classList.toggle("attention", state === UI_STATE.idle || state === UI_STATE.needsPermission);
+    pill.classList.toggle("error", state === UI_STATE.error);
+    dot.classList.toggle("hidden", state !== UI_STATE.recording && state !== UI_STATE.arming);
 
-    if (state === "recording" && startedAt != null) {
+    if (state === UI_STATE.recording && startedAt != null) {
       label.textContent = `${t("overlay_recording")} ${formatElapsed(startedAt)}${micMuted ? ` · ${t("overlay_mic_muted")}` : ""}`;
-    } else if (state === "arming") {
+    } else if (state === UI_STATE.arming) {
       label.textContent = t("popup_status_arming");
-    } else if (state === "stopping" || state === "finalizing") {
+    } else if (state === UI_STATE.stopping || state === UI_STATE.finalizing) {
       label.textContent = t("overlay_uploading");
-    } else if (state === "finished") {
+    } else if (state === UI_STATE.finished) {
       label.textContent = t("overlay_finished");
-    } else if (state === "needsPermission") {
+    } else if (state === UI_STATE.needsPermission) {
       label.textContent = t("overlay_needs_permission");
-    } else if (state === "error") {
+    } else if (state === UI_STATE.error) {
       label.textContent = `${t("overlay_error")}${error != null ? ` — ${error.slice(0, 120)}` : ""}`;
     } else {
       label.textContent = t("overlay_coachmark");
     }
 
-    if (state === "recording" && timer == null) {
+    if (state === UI_STATE.recording && timer == null) {
       timer = window.setInterval(render, 1000);
-    } else if (state !== "recording" && timer != null) {
+    } else if (state !== UI_STATE.recording && timer != null) {
       clearInterval(timer);
       timer = null;
     }

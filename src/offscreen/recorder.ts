@@ -4,7 +4,13 @@ import {
   RECORDER_TIMESLICE_MS,
   RECORDING_MIME_TYPE,
 } from "../shared/constants";
-import { sendMessage, type PartTarget, type UploadSession } from "../shared/messages";
+import {
+  MESSAGE_TARGET,
+  sendMessage,
+  SW_MESSAGE_TYPE,
+  type PartTarget,
+  type UploadSession,
+} from "../shared/messages";
 import { createPartBuffer } from "../upload/part-buffer";
 import { createUploadManager } from "../upload/upload-manager";
 
@@ -82,7 +88,7 @@ const setUpRecording = async (
   const buffer = createPartBuffer();
   const uploads = createUploadManager(session, token, firstPart, {
     onPartUploaded: (partNumber, etag) =>
-      sendMessage({ target: "sw", type: "part-uploaded", partNumber, etag }),
+      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.partUploaded, partNumber, etag }),
   });
 
   recorder.ondataavailable = (event) => {
@@ -107,20 +113,20 @@ const setUpRecording = async (
     // release the streams (and the OS recording indicator) before the upload
     // finalization, which can take a while on a flaky network.
     cleanup();
-    sendMessage({ target: "sw", type: "capture-stopped" });
+    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureStopped });
 
     try {
       await uploads.finalize(buffer.flushFinal());
-      sendMessage({ target: "sw", type: "upload-finished" });
+      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.uploadFinished });
     } catch (error) {
       console.error("[recorder] finalize failed:", error);
-      sendMessage({ target: "sw", type: "upload-failed", message: String(error) });
+      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.uploadFailed, message: String(error) });
     }
   };
 
   recorder.onerror = (event) => {
     console.error("[recorder] MediaRecorder error:", event);
-    sendMessage({ target: "sw", type: "capture-error", message: "MediaRecorder error" });
+    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureError, message: "MediaRecorder error" });
     recorder.stop();
   };
 
@@ -154,7 +160,7 @@ const setUpRecording = async (
     return;
   }
 
-  sendMessage({ target: "sw", type: "capture-started" });
+  sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureStarted });
 };
 
 export const stopRecording = (): void => {

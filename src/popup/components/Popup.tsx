@@ -10,7 +10,7 @@ import {
   clearMeetingFields,
   reconcileMeetingFields,
 } from "../../shared/meeting-fields";
-import { sendMessage } from "../../shared/messages";
+import { MESSAGE_TARGET, sendMessage, SW_MESSAGE_TYPE } from "../../shared/messages";
 import { useActiveMeetTab } from "../hooks/useActiveMeetTab";
 import { openPermissionPage } from "../open-permission-page";
 import { deriveView } from "../view-state";
@@ -94,7 +94,7 @@ export const Popup = () => {
 
   const handleCta = () => {
     if (view.ctaKind === "newRecording") {
-      sendMessage({ target: "sw", type: "dismiss-error" });
+      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.dismissError });
       update(clearMeetingFields(settings));
       return;
     }
@@ -105,7 +105,7 @@ export const Popup = () => {
     }
 
     setStarting(true);
-    sendMessage({ target: "sw", type: "toggle-recording" });
+    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.toggleRecording });
   };
 
   return (
@@ -133,7 +133,7 @@ export const Popup = () => {
         {view.busy ? (
           <RecordingCard
             snapshot={snapshot}
-            onStop={() => sendMessage({ target: "sw", type: "toggle-recording" })}
+            onStop={() => sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.toggleRecording })}
           />
         ) : null}
 
