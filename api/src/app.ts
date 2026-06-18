@@ -14,6 +14,8 @@ import {
 } from "./file-uploads-client";
 import { GatewayUnavailableError } from "./gateway-auth";
 import { getProfile } from "./profiles";
+import { previewRecordings, runProcessing } from "./processing";
+import { runDelivery } from "./delivery";
 
 // The stand-in mirrors n8n's Upload flow: validate the user via the gateway, then
 // proxy the streaming multipart upload to file-uploads-api. It holds no AWS creds —
@@ -94,6 +96,23 @@ app.get("/uploads/:key", async (c) => c.json(await getMultipart(c.req.param("key
 app.delete("/uploads/:key", async (c) => {
   await abortMultipart(c.req.param("key"));
   return c.body(null, 204);
+});
+
+// Processing + Delivery: the stand-in for n8n's post-upload flows. Unlike /uploads
+// (driven by the extension with the user's JWT), these are operator/schedule-triggered
+// and local-only — manual endpoints so each stage can be stepped through and inspected.
+app.get("/processing/preview", async (c) => c.json(await previewRecordings()));
+
+app.post("/processing/run", async (c) => {
+  const { limit } = await c.req.json<{ limit?: number }>().catch(() => ({ limit: undefined }));
+
+  return c.json(await runProcessing(limit));
+});
+
+app.post("/delivery/run", async (c) => {
+  const { limit } = await c.req.json<{ limit?: number }>().catch(() => ({ limit: undefined }));
+
+  return c.json(await runDelivery(limit));
 });
 
 // file-uploads 4xx (validation/conflict/not-found) is a meaningful client signal —
