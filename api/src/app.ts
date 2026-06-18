@@ -1,70 +1,49 @@
-import {
-  AbortMultipartUploadCommand,
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
-  ListPartsCommand,
-  UploadPartCommand,
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 
-import { bearerAuth } from "./auth";
-import { invokeFinalize } from "./finalize-invoke";
-import { buildObjectMetadata, renderKey } from "./keys";
-import type { SpeakerNaming } from "./pipeline/review";
-import { getArtifact, listReviews } from "./pipeline/review-store";
-import { getProfile, PROFILE_IDS, PROFILES, type BucketRef } from "./profiles";
-import { presignExpiresSeconds, resolveBucket, s3 } from "./s3";
+import { gatewayAuth } from "./auth";
+import {
+  abortMultipart,
+  createMultipart,
+  getMultipart,
+  recordPart,
+  UpstreamHttpError,
+  UpstreamUnavailableError,
+  type MultipartConfig,
+} from "./file-uploads-client";
+import { GatewayUnavailableError } from "./gateway-auth";
+import { getProfile } from "./profiles";
 
-export const app = new Hono();
+// The stand-in mirrors n8n's Upload flow: validate the user via the gateway, then
+// proxy the streaming multipart upload to file-uploads-api. It holds no AWS creds —
+// file-uploads-api owns the S3 session, the parts ledger, and the object key.
+export const app = new Hono<{ Variables: { email: string } }>();
 
 app.use(logger());
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "").split(",").filter(Boolean);
 const corsForExtension = cors({ origin: allowedOrigins, allowHeaders: ["Authorization", "Content-Type"] });
 
-app.use("/uploads/*", corsForExtension);
 app.use("/uploads", corsForExtension);
-app.use("/uploads/*", bearerAuth);
-app.use("/uploads", bearerAuth);
+app.use("/uploads/*", corsForExtension);
+app.use("/uploads", gatewayAuth);
+app.use("/uploads/*", gatewayAuth);
 
-app.use("/reviews/*", corsForExtension);
-app.use("/reviews", corsForExtension);
-app.use("/reviews/*", bearerAuth);
-app.use("/reviews", bearerAuth);
-
-const isBucketRef = (value: unknown): value is BucketRef =>
-  typeof value === "string" && value in PROFILES;
-
-interface SessionRef {
-  bucketRef: BucketRef;
-  key: string;
-  uploadId: string;
-}
-
-const parseSessionRef = (body: Record<string, unknown>): SessionRef => {
-  const { bucketRef, key, uploadId } = body;
-
-  if (!isBucketRef(bucketRef) || typeof key !== "string" || typeof uploadId !== "string") {
-    throw new Error("Invalid session reference");
-  }
-
-  return { bucketRef, key, uploadId };
-};
+const destination = () => ({
+  bucket: process.env.DESTINATION_BUCKET ?? "",
+  path: process.env.DESTINATION_PATH ?? "",
+});
 
 app.post("/uploads", async (c) => {
-  const body = await c.req.json();
-  const profile = getProfile(body.profileId);
+  const { profileId, pitchId } = (await c.req.json()) as { profileId?: string; pitchId?: string };
+  const profile = getProfile(profileId ?? "");
 
   if (profile == null) {
-    return c.json({ error: `Unknown profile: ${body.profileId}` }, 404);
+    return c.json({ error: `Unknown profile: ${profileId}` }, 404);
   }
 
-  const auto: Record<string, string> = body.auto ?? {};
-  const fields: Record<string, string> = body.fields ?? {};
-
+  const fields: Record<string, string | undefined> = { pitchId };
   const missing = profile.requiredFields.filter((key) => !fields[key]?.trim());
 
   if (missing.length > 0) {
@@ -72,170 +51,61 @@ app.post("/uploads", async (c) => {
   }
 
   const malformed = Object.entries(profile.fieldPatterns).filter(
-    ([key, pattern]) => fields[key] != null && !pattern.test(fields[key]),
+    ([key, pattern]) => fields[key] != null && !pattern.test(fields[key]!),
   );
 
   if (malformed.length > 0) {
     return c.json({ error: `Malformed fields: ${malformed.map(([key]) => key).join(", ")}` }, 400);
   }
 
-  let key: string;
+  const config: MultipartConfig = {
+    destination: destination(),
+    allowed_mimetypes: profile.allowedMimetypes,
+    constraints: [],
+    transcoding: null,
+    max_size: null,
+    file_extension: profile.fileExtension,
+    content_type: profile.contentType,
+    metadata: { pitch_id: pitchId!, recorded_by: c.get("email") },
+  };
 
-  try {
-    key = renderKey(profile, auto, fields);
-  } catch (error) {
-    return c.json({ error: String(error) }, 400);
+  const result = await createMultipart(config);
+
+  return c.json(result, 201);
+});
+
+app.post("/uploads/part", async (c) => {
+  const { key, partNumber, etag, complete } = (await c.req.json()) as {
+    key?: string;
+    partNumber?: number;
+    etag?: string;
+    complete?: boolean;
+  };
+
+  if (typeof key !== "string" || typeof partNumber !== "number" || typeof etag !== "string") {
+    return c.json({ error: "Invalid part" }, 400);
   }
 
-  const result = await s3.send(
-    new CreateMultipartUploadCommand({
-      Bucket: resolveBucket(profile.bucket),
-      Key: key,
-      ContentType: profile.contentType,
-      Metadata: buildObjectMetadata(profile, auto, fields),
-    }),
-  );
-
-  return c.json({ uploadId: result.UploadId, key, bucketRef: profile.bucket }, 201);
+  return c.json(await recordPart({ key, partNumber, etag, complete }));
 });
 
-app.post("/uploads/parts", async (c) => {
-  const body = await c.req.json();
-  const { bucketRef, key, uploadId } = parseSessionRef(body);
-  const partNumbers: number[] = body.partNumbers ?? [];
+app.get("/uploads/:key", async (c) => c.json(await getMultipart(c.req.param("key"))));
 
-  if (partNumbers.some((n) => !Number.isInteger(n) || n < 1 || n > 10_000)) {
-    return c.json({ error: "Invalid part numbers" }, 400);
+app.delete("/uploads/:key", async (c) => {
+  await abortMultipart(c.req.param("key"));
+  return c.body(null, 204);
+});
+
+// file-uploads 4xx (validation/conflict/not-found) is a meaningful client signal —
+// forward it; an unreachable or 5xx upstream is a stand-in-side 502.
+app.onError((error, c) => {
+  if (error instanceof UpstreamHttpError) {
+    return c.json(error.body ?? { error: "Upstream error" }, error.status >= 400 && error.status < 500 ? (error.status as 400) : 502);
   }
 
-  const bucket = resolveBucket(bucketRef);
-
-  const urls = await Promise.all(
-    partNumbers.map(async (partNumber) => ({
-      partNumber,
-      url: await getSignedUrl(
-        s3,
-        new UploadPartCommand({
-          Bucket: bucket,
-          Key: key,
-          UploadId: uploadId,
-          PartNumber: partNumber,
-        }),
-        { expiresIn: presignExpiresSeconds() },
-      ),
-    })),
-  );
-
-  return c.json({ urls });
-});
-
-app.post("/uploads/complete", async (c) => {
-  const body = await c.req.json();
-  const { bucketRef, key, uploadId } = parseSessionRef(body);
-  const parts: { PartNumber: number; ETag: string }[] = body.parts ?? [];
-
-  if (parts.length === 0) {
-    return c.json({ error: "No parts to complete" }, 400);
+  if (error instanceof UpstreamUnavailableError || error instanceof GatewayUnavailableError) {
+    return c.json({ error: String(error.message) }, 502);
   }
 
-  const result = await s3.send(
-    new CompleteMultipartUploadCommand({
-      Bucket: resolveBucket(bucketRef),
-      Key: key,
-      UploadId: uploadId,
-      MultipartUpload: {
-        Parts: [...parts].sort((a, b) => a.PartNumber - b.PartNumber),
-      },
-    }),
-  );
-
-  return c.json({ key, location: result.Location ?? `s3://${resolveBucket(bucketRef)}/${key}` });
+  return c.json({ error: String(error) }, 500);
 });
-
-app.post("/uploads/list-parts", async (c) => {
-  const { bucketRef, key, uploadId } = parseSessionRef(await c.req.json());
-  const bucket = resolveBucket(bucketRef);
-
-  const parts: { PartNumber: number; ETag: string }[] = [];
-  let marker: string | undefined;
-
-  do {
-    const result = await s3.send(
-      new ListPartsCommand({
-        Bucket: bucket,
-        Key: key,
-        UploadId: uploadId,
-        PartNumberMarker: marker,
-      }),
-    );
-
-    for (const part of result.Parts ?? []) {
-      parts.push({ PartNumber: part.PartNumber!, ETag: part.ETag! });
-    }
-
-    marker = result.IsTruncated ? result.NextPartNumberMarker : undefined;
-  } while (marker != null);
-
-  return c.json({ parts });
-});
-
-app.delete("/uploads", async (c) => {
-  const { bucketRef, key, uploadId } = parseSessionRef(await c.req.json());
-
-  await s3.send(
-    new AbortMultipartUploadCommand({
-      Bucket: resolveBucket(bucketRef),
-      Key: key,
-      UploadId: uploadId,
-    }),
-  );
-
-  return c.json({ aborted: true });
-});
-
-// ── review queue ──
-// The reviews/ artifacts share the project bucket. Auth is the same shared bearer
-// token, so `recordedBy` is a trusted query param (matches the upload trust model).
-
-const reviewsBucket = (): string => resolveBucket(PROFILE_IDS.project);
-
-const isReviewKey = (value: unknown): value is string =>
-  typeof value === "string" && value.startsWith("reviews/") && !value.includes("..");
-
-app.get("/reviews", async (c) => {
-  const recordedBy = c.req.query("recordedBy");
-
-  if (recordedBy == null || recordedBy === "") {
-    return c.json({ error: "Missing recordedBy" }, 400);
-  }
-
-  return c.json({ reviews: await listReviews(reviewsBucket(), recordedBy) });
-});
-
-app.get("/reviews/item", async (c) => {
-  const key = c.req.query("key");
-
-  if (!isReviewKey(key)) {
-    return c.json({ error: "Invalid review key" }, 400);
-  }
-
-  try {
-    return c.json(await getArtifact(reviewsBucket(), key));
-  } catch (error) {
-    return c.json({ error: String(error) }, 404);
-  }
-});
-
-app.post("/reviews/finalize", async (c) => {
-  const body = await c.req.json();
-
-  if (!isReviewKey(body.key)) {
-    return c.json({ error: "Invalid review key" }, 400);
-  }
-
-  await invokeFinalize({ key: body.key, naming: body.naming as SpeakerNaming });
-
-  return c.json({ accepted: true }, 202);
-});
-
-app.onError((error, c) => c.json({ error: String(error) }, 500));

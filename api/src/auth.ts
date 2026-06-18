@@ -1,21 +1,27 @@
-import { timingSafeEqual } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 
-export const safeEquals = (a: string, b: string): boolean => {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
+import { GatewayUnavailableError, resolveUser, UnauthorizedError } from "./gateway-auth";
 
-  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
-};
+// Auth is delegated to the gateway: the middleware forwards the extension's
+// `Authorization` (the `auth._token.local` JWT) to GET /api/user/me/, which both
+// validates the token and resolves the user. The email is stashed for the route
+// handler to stamp as `recorded_by` object metadata.
+export const gatewayAuth: MiddlewareHandler<{
+  Variables: { email: string };
+}> = async (c, next) => {
+  try {
+    const { email } = await resolveUser(c.req.header("Authorization"));
+    c.set("email", email);
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
 
-// Fail-closed: with no API_TOKEN configured every request is rejected.
-export const bearerAuth: MiddlewareHandler = async (c, next) => {
-  const token = process.env.API_TOKEN;
-  const header = c.req.header("Authorization") ?? "";
-  const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
+    if (error instanceof GatewayUnavailableError) {
+      return c.json({ error: "Auth gateway unavailable" }, 502);
+    }
 
-  if (token == null || token === "" || !safeEquals(provided, token)) {
-    return c.json({ error: "Unauthorized" }, 401);
+    throw error;
   }
 
   await next();
