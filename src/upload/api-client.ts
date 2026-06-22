@@ -1,11 +1,12 @@
 import type { ProfileId } from "../profiles/types";
-import { API_BASE_URL } from "../shared/constants";
+import { API_BASE_URL, API_PATH_PREFIX } from "../shared/constants";
 
 // The `auth._token.local` cookie value is already the full `Bearer <JWT>` string,
 // so it is sent verbatim as Authorization. The offscreen doc can't read the cookie,
 // so the token is always passed in by the caller (the SW reads it once).
+// Paths carry a trailing slash and the `/api/chrome-recorder` gateway prefix.
 const request = async <T>(method: string, path: string, token: string, body?: unknown): Promise<T> => {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${API_BASE_URL}${API_PATH_PREFIX}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -58,15 +59,15 @@ export interface UploadStatusResult {
 export const createUpload = (
   payload: { profileId: ProfileId; pitchId: string },
   token: string,
-): Promise<CreateUploadResult> => request("POST", "/uploads", token, payload);
+): Promise<CreateUploadResult> => request("POST", "/uploads/", token, payload);
 
 export const recordPart = (
   input: { key: string; partNumber: number; etag: string; complete?: boolean },
   token: string,
-): Promise<RecordPartResult> => request("POST", "/uploads/part", token, input);
+): Promise<RecordPartResult> => request("POST", "/uploads/part/", token, input);
 
 export const getUploadStatus = (key: string, token: string): Promise<UploadStatusResult> =>
-  request("GET", `/uploads/${encodeURIComponent(key)}`, token);
+  request("GET", `/uploads/${encodeURIComponent(key)}/`, token);
 
 export const abortUpload = (key: string, token: string): Promise<void> =>
-  request("DELETE", `/uploads/${encodeURIComponent(key)}`, token);
+  request("DELETE", `/uploads/${encodeURIComponent(key)}/`, token);

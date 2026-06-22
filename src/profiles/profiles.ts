@@ -1,7 +1,7 @@
 import { PROFILE_IDS, type ProfileId, type RecordingProfile } from "./types";
 
 // The UI-facing profile table. The upload config (bucket, key, content type,
-// metadata) is owned by api/src/profiles.ts — the server is the trust boundary.
+// metadata) is owned by chrome-recorder-consumer-api — the server is the trust boundary.
 export const PROFILES: Record<ProfileId, RecordingProfile> = {
   [PROFILE_IDS.project]: {
     id: PROFILE_IDS.project,

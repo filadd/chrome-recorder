@@ -16,7 +16,7 @@ export interface ProfileField {
 
 // The client only carries the UI shape and the user-provided fields now — the
 // object key, destination bucket, content type, and metadata are all rendered
-// server-side by the n8n stand-in / file-uploads-api (the trust boundary).
+// server-side by chrome-recorder-consumer-api / file-uploads-api (the trust boundary).
 export interface RecordingProfile {
   id: ProfileId;
   labelKey: string;

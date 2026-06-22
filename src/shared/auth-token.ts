@@ -2,8 +2,8 @@ import { AUTH_COOKIE_URL } from "./constants";
 
 // The extension authenticates as the real Filadd user: the `auth._token.local`
 // cookie (set by the Filadd frontend after login) already holds the full
-// `Bearer <JWT>` string, sent verbatim as the Authorization header to the n8n
-// stand-in, which validates it via the gateway.
+// `Bearer <JWT>` string, sent verbatim as the Authorization header to the gateway,
+// which validates it and injects `X-UserId` for chrome-recorder-consumer-api.
 //
 // Read in the service worker (and recovery), NEVER the offscreen document —
 // offscreen docs can only use chrome.runtime, not chrome.cookies. The SW threads

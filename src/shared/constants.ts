@@ -12,10 +12,16 @@ export const UPLOAD_MAX_ATTEMPTS = 6;
 export const UPLOAD_BACKOFF_BASE_MS = 1_000;
 export const UPLOAD_BACKOFF_CAP_MS = 30_000;
 
-// The local n8n stand-in (api/). Auth is the per-user `auth._token.local` JWT read
-// from the cookie at runtime (see src/shared/auth-token.ts), not a static token.
-// Configured via the root `.env` (VITE_API_BASE_URL); falls back to the local default.
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8787";
+// The Filadd gateway origin the extension uploads through. Auth is the per-user
+// `auth._token.local` JWT read from the cookie at runtime (see src/shared/auth-token.ts),
+// not a static token. Configured via the root `.env` (VITE_API_BASE_URL); falls back to
+// the local gateway. The gateway validates the JWT, injects `X-UserId`, and proxies to
+// chrome-recorder-consumer-api.
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
+// Gateway route prefix for the consumer API. The gateway strips `/api` and matches
+// `/chrome-recorder/uploads…` → chrome-recorder-consumer-api's `/api/uploads…`.
+export const API_PATH_PREFIX = "/api/chrome-recorder";
 
 // Origin to read the `auth._token.local` cookie from. For local testing the token
 // is set on the local frontend (localhost), not on filadd.com — point this at it.
