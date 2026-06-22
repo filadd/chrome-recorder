@@ -27,6 +27,9 @@ export default defineManifest({
   permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab", "cookies"],
   host_permissions: [
     "http://localhost/*",
+    // Local dockerfiles gateway is reached via its `.docker` VIRTUAL_HOST
+    // (e.g. http://gateway-service.docker) — needed so the SW's upload fetch isn't blocked.
+    "http://*.docker/*",
     // Local dev frontends are served over http (dockerfiles VIRTUAL_HOSTs);
     // prod over https. Both needed so chrome.cookies can read auth._token.local.
     "http://*.filadd.com/*",
