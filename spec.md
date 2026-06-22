@@ -9,9 +9,7 @@ A Chrome extension that records Google Meet conversations and uploads them for t
 - **Deterministic downstream**: each profile captures the association it needs (the **pitch id**) *at record time*, stamped as S3 object metadata, so the processing flow never has to reconstruct "which conversation is this?" after the fact.
 - **Audio-transient by design**: the recordings bucket is a transient queue, not an archive. The processing flow deletes each object after transcription; a lifecycle rule expires stragglers. Only transcripts and what's derived from them persist.
 
-The extension uploads through Filadd's existing **`file-uploads-api`** (multipart transfer mode); the downstream work — **diarized transcription** (`transcript-api`, Deepgram), human **speaker review** (in **Notion**), and **living-context delivery** (`ai-conversations-api`) — will ultimately be orchestrated by **n8n**. See the Notion design docs *Pitch conversations transcriber*, *Multipart Uploads*, *Transcription API*, and *Chrome Recorder Extension*.
-
-**`api/` in this repo is a local n8n stand-in**: it now implements all three flows the real n8n will own — **Upload** (validate via the gateway, proxy the multipart upload to `file-uploads-api`), **Processing** (poll the recordings bucket → `transcript-api` diarized transcription → write the Notion Transcription + Segments + Speakers → delete the audio), and **Delivery** (poll Notion for reviewed transcripts → `ai-conversations-api` context generation → upsert the Notion Context). It is a faithful, runnable rehearsal of the n8n workflows against the real local services; **only building the actual n8n workflows remains** (see §7).
+The extension uploads through **`chrome-recorder-consumer-api`** (a Filadd FastAPI service, fronted by the **gateway**), which proxies the multipart upload to Filadd's existing **`file-uploads-api`**. That same consumer API owns the downstream work — **Upload** (validate the caller, proxy the multipart upload to `file-uploads-api`), **Processing** (Celery Beat: list the recordings bucket → `transcript-api` diarized transcription → write the Notion Transcription + Segments + Speakers → delete the audio), and **Delivery** (Celery Beat: poll Notion for reviewed transcripts → `ai-conversations-api` context generation → upsert the Notion Context). This repo is the **extension only**; the consumer API lives in the separate `chrome-recorder-consumer-api` repo. See the Notion design docs *Pitch conversations transcriber*, *Multipart Uploads*, *Transcription API*, and *Chrome Recorder Extension*.
 
 ## 2. Use cases / profiles
 
@@ -19,7 +17,7 @@ A **profile** describes what identifies a recording and what the processing flow
 
 | Profile | Purpose | User-provided | Destination | Processing |
 |---|---|---|---|---|
-| `project` | Pitch/project conversations | `pitchId` (required — select over the settings-managed pitch list) | `filadd-chrome-recorder-prod` / `projects/{uuid}.webm` | Transcript + living context page under the Notion pitch (n8n) |
+| `project` | Pitch/project conversations | `pitchId` (required — select over the settings-managed pitch list) | `filadd-chrome-recorder-prod` / `projects/{uuid}.webm` | Transcript + living context page under the Notion pitch (consumer-api) |
 
 Speaker **names are not entered at record time** — under the new architecture they're assigned *after* transcription, **in Notion** (the reviewer sets a Person on each numeric speaker row). So `project` asks only for the pitch at record time. `project` is the only profile that ships today; the table stays a const map so another profile is a table entry, not a refactor.
 
@@ -30,9 +28,9 @@ Speaker **names are not entered at record time** — under the new architecture 
 | Metadata key | Source |
 |---|---|
 | `pitch_id` | the `pitchId` field (Notion page id) |
-| `recorded_by` | the recorder's **email**, resolved from the JWT via the gateway |
+| `recorded_by` | the recorder's **email**, resolved by the consumer API from the gateway-injected `X-UserId` via users-api |
 
-**Trust boundary**: the extension sends only `{profileId, pitchId}` plus its Filadd JWT. The **stand-in renders the upload configuration** (destination bucket/path, content type, allowed mimetypes, metadata) from its own copy of the profile table, validates `pitchId` (32-hex Notion page id), and stamps `recorded_by` from the gateway-resolved email — never from the client. A tampered client cannot choose a bucket, forge `recorded_by`, or smuggle metadata.
+**Trust boundary**: the extension sends only `{profileId, pitchId}` plus its Filadd JWT. The **consumer API renders the upload configuration** (destination bucket/path, content type, allowed mimetypes, metadata) from its own copy of the profile table, validates `pitchId` (32-hex Notion page id), and stamps `recorded_by` from the email resolved via users-api (from the gateway-injected `X-UserId`) — never from the client. A tampered client cannot choose a bucket, forge `recorded_by`, or smuggle metadata.
 
 ## 3. Architecture
 
@@ -41,29 +39,30 @@ flowchart LR
     CS["Content script<br/>pill + leave detection"] -->|"STOP"| SW["Service worker<br/>XState machine<br/>orchestration + cookie JWT"]
     P["Popup<br/>profile + pitch"] -->|"start / settings"| SW
     SW -->|"streamId + session<br/>+ token + first part"| OFF["Offscreen document<br/>capture + mix + record<br/>upload loop"]
-    SW -->|"create / part / status / abort"| API["n8n stand-in (api/)<br/>Hono, local"]
+    SW -->|"create / part / status / abort<br/>(Bearer JWT)"| GW["gateway<br/>(validates JWT,<br/>injects X-UserId)"]
     OFF -->|"PUT parts (presigned)"| S3["Recordings bucket"]
-    OFF -->|"part / status"| API
-    API -->|"GET /api/user/me/ (Bearer JWT)"| GW["gateway"]
+    OFF -->|"part / status (Bearer JWT)"| GW
+    GW -->|"X-UserId"| API["chrome-recorder-consumer-api<br/>FastAPI + Celery"]
+    API -->|"GET /api/user/me/ (X-UserId)"| USERS["users-api<br/>(email = recorded_by)"]
     API -->|"multipart create / part"| FU["file-uploads-api"]
     FU -->|"assemble + post-process + land"| S3
-    API -.->|"Processing: poll + presign GET"| S3
+    API -.->|"Processing (Beat): list + presign GET + delete"| S3
     API -->|"diarized transcription"| TR["transcript-api<br/>(Deepgram)"]
-    API -->|"Delivery: context generation"| AIC["ai-conversations-api"]
+    API -->|"Delivery (Beat): context generation"| AIC["ai-conversations-api"]
     API -->|"Transcriptions / Segments /<br/>Speakers / Contexts"| NOTION["Notion"]
 ```
 
-(Processing + Delivery run in the stand-in today; the real n8n will own them later — §7.)
+(Processing + Delivery run as Celery Beat jobs inside `chrome-recorder-consumer-api` — §7.)
 
 ### Context responsibilities
 
-- **Service worker** (`src/background/service-worker.ts`): hosts the XState actor, handles invocation surfaces (action click, keyboard command), calls `tabCapture.getMediaStreamId`, **reads the `auth._token.local` cookie** (the offscreen doc can't), creates the upload session via the stand-in, manages the offscreen document lifecycle, watches `tabs.onRemoved`/`onUpdated` as the auto-stop backstop, and runs crash recovery on startup. Holds **no media handles** and does **no uploads**.
+- **Service worker** (`src/background/service-worker.ts`): hosts the XState actor, handles invocation surfaces (action click, keyboard command), calls `tabCapture.getMediaStreamId`, **reads the `auth._token.local` cookie** (the offscreen doc can't), creates the upload session via `chrome-recorder-consumer-api` (through the gateway), manages the offscreen document lifecycle, watches `tabs.onRemoved`/`onUpdated` as the auto-stop backstop, and runs crash recovery on startup. Holds **no media handles** and does **no uploads**.
 - **Offscreen document** (`src/offscreen/`): the only context allowed to hold MediaStreams long-term. Captures tab audio + mic, mixes, records, buffers, and runs the upload loop — PUTting parts directly to S3 and reporting ETags to the SW. Created with reason `USER_MEDIA` (no lifetime cap); explicitly closed after finalization. Receives the JWT + first presigned part from the SW in `start-capture`.
 - **Content script** (`src/content/`): detects Meet call pages, injects the Shadow-DOM overlay (toggle, recording indicator, coachmark), detects call end.
 - **Popup** (`src/popup/`): profile picker, per-profile field form (pitch select), userId setting, pitch-list management in settings, status mirror, and recovery affordances.
 - **Permission page** (`src/permission/`): a visible page whose only job is the one-time mic `getUserMedia` grant — offscreen documents cannot show permission prompts.
 
-Speaker review is **not** an extension surface anymore — it lives in Notion (between the stand-in's Processing and Delivery flows; §7).
+Speaker review is **not** an extension surface anymore — it lives in Notion (between the consumer API's Processing and Delivery flows; §7).
 
 ### State
 
@@ -104,7 +103,7 @@ micSource ─ micGain ──→ destNode (recording)     mic NEVER to speakers (
 - `AudioContext` may start `suspended` in an offscreen doc → always `await ctx.resume()`.
 - Recorder: `audio/webm;codecs=opus` (guarded by `isTypeSupported`), `audioBitsPerSecond: 64000` (~28 MB/h), ~3 s timeslice.
 - **Meet's mute is mirrored, not inherited**: the content script watches the mic button's `data-is-muted` attribute and the offscreen doc ramps `micGain` to 0/1 accordingly.
-- Known limitation: live MediaRecorder webm lacks duration/cues metadata → playable but not seekable until remuxed. Irrelevant once the pipeline consumes and deletes the audio. (Note: `file-uploads-api` validates the assembled file's mimetype with `python-magic`, which detects opus-in-webm as **`video/webm`** — the stand-in declares the upload as `video/webm` accordingly.)
+- Known limitation: live MediaRecorder webm lacks duration/cues metadata → playable but not seekable until remuxed. Irrelevant once the pipeline consumes and deletes the audio. (Note: `file-uploads-api` validates the assembled file's mimetype with `python-magic`, which detects opus-in-webm as **`video/webm`** — the consumer API declares the upload as `video/webm` accordingly.)
 
 ### 4.4 Streaming multipart upload (via file-uploads-api)
 
@@ -118,7 +117,7 @@ micSource ─ micGain ──→ destNode (recording)     mic NEVER to speakers (
 
 ### 4.5 Persistence: metadata only, no audio in IndexedDB
 
-The offscreen document owns capture; if it dies, capture is over — there is no future audio to protect. **Decision**: audio buffers in memory; the SW persists `{session: {key, filepath, profileId}, lastPart: {partNumber, etag}}` to `chrome.storage.local` after each part. Worst-case loss on a hard crash = the unflushed tail (< one 5 MiB part). Recovery on restart reconciles the session by `key` via `GET /uploads/:key`: complete a still-`PENDING` prefix with `complete:true` on the last recorded part, or clear a finished/vanished session.
+The offscreen document owns capture; if it dies, capture is over — there is no future audio to protect. **Decision**: audio buffers in memory; the SW persists `{session: {key, filepath, profileId}, lastPart: {partNumber, etag}}` to `chrome.storage.local` after each part. Worst-case loss on a hard crash = the unflushed tail (< one 5 MiB part). Recovery on restart reconciles the session by `key` via `GET /uploads/{key}/`: complete a still-`PENDING` prefix with `complete:true` on the last recorded part, or clear a finished/vanished session.
 
 ### 4.6 State machine library
 
@@ -128,72 +127,71 @@ XState v5: the only mature option with first-class snapshot persistence, DOM-fre
 
 1. Content script matches `meet.google.com/([a-z]{3}-[a-z]{4}-[a-z]{3})` → injects the informative pill. While idle the pill points to the extension icon.
 2. User starts from the popup (or Ctrl+Shift+S). Mic missing → SW opens the permission page; `pitchId` unfilled → the popup form blocks the start; not logged into Filadd (no `auth._token.local`) → the start surfaces an auth error.
-3. SW: `getMediaStreamId({ targetTabId })` → reads the JWT cookie → `POST /uploads {profileId, pitchId}` to the stand-in (which validates the user via the gateway and creates the file-uploads multipart session) → persists `{session, lastPart: null}` → ensures the offscreen doc → sends `START_CAPTURE { streamId, session, token, firstPart }`.
-4. Offscreen: builds the audio graph, starts MediaRecorder; chunks accumulate in memory; at ≥5 MiB a part is cut → PUT to the held presigned URL (retry w/ backoff, reusing the URL) → read the `ETag` → report it to the SW (for the ledger) **and** to `POST /uploads/part`, which returns the next part's URL.
-5. Stop (leave detection, tab close, track end, or popup stop) → streams released immediately → final part flushed and recorded with `complete:true` → poll `GET /uploads/:key` until `COMPLETED` → UI snapshot `finished` → offscreen doc closed.
-6. Cancel → `DELETE /uploads/:key` (abort; no orphaned parts billing).
-7. `runtime.onStartup`: an unfinished persisted session → reconcile via `GET /uploads/:key` → finalize the prefix, or surface/clear in the popup.
+3. SW: `getMediaStreamId({ targetTabId })` → reads the JWT cookie → `POST /uploads/ {profileId, pitchId}` to the consumer API through the gateway (the gateway validates the JWT + injects `X-UserId`; the consumer API resolves the email and creates the file-uploads multipart session) → persists `{session, lastPart: null}` → ensures the offscreen doc → sends `START_CAPTURE { streamId, session, token, firstPart }`.
+4. Offscreen: builds the audio graph, starts MediaRecorder; chunks accumulate in memory; at ≥5 MiB a part is cut → PUT to the held presigned URL (retry w/ backoff, reusing the URL) → read the `ETag` → report it to the SW (for the ledger) **and** to `POST /uploads/part/`, which returns the next part's URL.
+5. Stop (leave detection, tab close, track end, or popup stop) → streams released immediately → final part flushed and recorded with `complete:true` → poll `GET /uploads/{key}/` until `COMPLETED` → UI snapshot `finished` → offscreen doc closed.
+6. Cancel → `DELETE /uploads/{key}/` (abort; no orphaned parts billing).
+7. `runtime.onStartup`: an unfinished persisted session → reconcile via `GET /uploads/{key}/` → finalize the prefix, or surface/clear in the popup.
 
-## 6. Upload API — the n8n stand-in (`api/`)
+## 6. Upload API — `chrome-recorder-consumer-api` (via the gateway)
 
-The extension never holds AWS credentials. The stand-in is the trust boundary and the BFF between the extension and the internal services; it mirrors what n8n's Upload flow will do.
+The extension never holds AWS credentials. `chrome-recorder-consumer-api` is the trust boundary and the BFF between the extension and the internal services; it is fronted by the gateway, which terminates auth.
 
 ### 6.1 Contract (what the extension calls)
 
-All requests carry `Authorization: <auth._token.local value>` (already `Bearer <JWT>`) and `Content-Type: application/json`; CORS exposes them to the extension origin.
+The extension calls the gateway under the prefix `/api/chrome-recorder`; the gateway strips `/api` and proxies to the consumer API's `/api/uploads…`. All requests carry `Authorization: <auth._token.local value>` (already `Bearer <JWT>`) and `Content-Type: application/json`.
 
-| Route | Body → Response |
+| Route (client-facing) | Body → Response |
 |---|---|
-| `POST /uploads` | `{profileId, pitchId}` → validate user via gateway (resolve email), validate `pitchId`, build the file-uploads config (+ metadata `{pitch_id, recorded_by}`), `createMultipart` → `{key, filepath, partNumber, url}` (first presigned part) |
-| `POST /uploads/part` | `{key, partNumber, etag, complete?}` → `recordPart` → `{key, status, partNumber, url}` (next presigned part, or `ASSEMBLING` on `complete:true`) |
-| `GET /uploads/:key` | → `{status, parts}` (passthrough of the file-uploads session status; recovery + completion poll) |
-| `DELETE /uploads/:key` | → `204` (abort the multipart session) |
+| `POST /api/chrome-recorder/uploads/` | `{profileId, pitchId}` → resolve email (users-api), validate `pitchId`, build the file-uploads config (+ metadata `{pitch_id, recorded_by}`), `createMultipart` → `{key, filepath, partNumber, url}` (first presigned part) |
+| `POST /api/chrome-recorder/uploads/part/` | `{key, partNumber, etag, complete?}` → `recordPart` → `{key, status, partNumber, url}` (next presigned part, or `ASSEMBLING` on `complete:true`) |
+| `GET /api/chrome-recorder/uploads/{key}/` | → `{status, parts}` (passthrough of the file-uploads session status; recovery + completion poll) |
+| `DELETE /api/chrome-recorder/uploads/{key}/` | → `204` (abort the multipart session) |
 
-Errors: `401` (invalid/absent JWT), `400` (missing/malformed `pitchId`), `404` (unknown profile / missing session), file-uploads `409`/`422` forwarded, `502` (gateway/file-uploads unreachable).
+Errors: `401` (invalid/absent JWT — rejected by the gateway before the consumer API), `422` (missing `X-UserId`), `400` (missing/malformed `pitchId`), `404` (unknown profile / missing session), file-uploads `409`/`422` forwarded, `502` (file-uploads/users unreachable).
 
 ### 6.2 Auth + proxy targets
 
-- **Auth via the gateway**: the gateway owns JWT validation, so the stand-in forwards `Authorization` to `GET {GATEWAY_URL}/api/user/me/`. The gateway validates the token (rejects an invalid one) and injects `X-UserId`; users-api returns the user incl. `email` (= `recorded_by`). One call validates *and* resolves identity. The stand-in MUST call the gateway, not users-api directly (that would bypass validation).
-- **file-uploads-api direct**: `file-uploads-api` has no app-level auth (it's gateway-fronted in prod), so the stand-in calls its multipart endpoints (`/api/presigned-multipart-upload/`, `/api/presigned-multipart-upload-part/`, `GET`/`DELETE …/{key}/`) directly at `FILE_UPLOADS_API_URL`.
+- **Auth is the gateway's**: the gateway validates the JWT (HS256, local) and injects `X-UserId`; the consumer API never calls the gateway for auth. To resolve `recorded_by`, the consumer API calls users-api `GET /api/user/me/` forwarding `X-UserId`; users-api returns the user incl. `email` (= `recorded_by`).
+- **file-uploads-api**: the consumer API calls file-uploads' multipart endpoints (`/api/presigned-multipart-upload/`, `/api/presigned-multipart-upload-part/`, `GET`/`DELETE …/{key}/`) via the internal HTTP pool.
 
-### 6.3 Running it
+### 6.3 Running it locally
 
-`api/` (Node + Hono) runs locally via `npm run dev` on `:8787`. Env (`api/.env.example`): `PORT`, `ALLOWED_ORIGINS`, `GATEWAY_URL`, `FILE_UPLOADS_API_URL`, `DESTINATION_BUCKET=filadd-chrome-recorder-prod`, `DESTINATION_PATH=projects`. The gateway, users-api, and file-uploads-api run locally via the `dockerfiles` repo (`./manage.sh up file-uploads users` + the gateway). `file-uploads-api`'s S3 client points at real AWS (no MinIO override), so local part PUTs hit the real staging bucket.
+The extension's gateway origin is set per build mode — `.env.development` → `http://localhost:8000` (local gateway), `.env.production` → `https://gateway.filadd.com`. Bring up the backend — gateway + `chrome-recorder-consumer-api` + dependencies — from the `dockerfiles` repo: `./manage.sh up chrome-recorder --workers`. `file-uploads-api`'s S3 client points at real AWS (no MinIO override), so local part PUTs hit the real staging bucket. The consumer API's destination is fixed (`DESTINATION_BUCKET=filadd-chrome-recorder-prod`, `DESTINATION_PATH=projects`).
 
-## 7. Processing & delivery (implemented in the stand-in)
+## 7. Processing & delivery (Celery Beat jobs in `chrome-recorder-consumer-api`)
 
-Transcription, speaker review, and living-context delivery are **n8n flows** in the target architecture. The stand-in (`api/`) now **rehearses them locally** so the whole pipeline can be exercised end-to-end before the real n8n exists. They are operator/schedule-triggered (no extension JWT — distinct from `/uploads`), so the stand-in exposes them as **manual endpoints** that step through each stage:
+Transcription, speaker review, and living-context delivery run as **Celery Beat jobs** inside `chrome-recorder-consumer-api` (no extension JWT — distinct from the Upload endpoints). Each is a **looper → processor** pair: a Beat-scheduled looper polls the source and enqueues one processor task per item; per-item failures are isolated so one bad recording never blocks the batch.
 
-| Route | Does |
+| Job | Does |
 |---|---|
-| `GET /processing/preview` | List bucket objects under `projects/` + their `pitch_id`/`recorded_by` metadata (read-only dry run) |
-| `POST /processing/run` `{limit?}` | For each recording: presign a GET → `transcript-api` diarized transcription → create the Notion Transcription (`pending`) + Speakers + Segments → **delete the audio** |
-| `POST /delivery/run` `{limit?}` | For each Transcription a reviewer marked `speakers_assigned`: rebuild the named transcript → `ai-conversations` context generation → upsert the Notion Context → mark `delivered` |
+| **Processing** (Beat) | Looper lists bucket objects under `projects/` + their `pitch_id`/`recorded_by` metadata, enqueues a processor per recording. Processor: skip if no `pitch_id` → presign a GET → `transcript-api` diarized transcription → create the Notion Transcription (`pending`) + Speakers + Segments → **delete the audio** (kept on failure for retry) |
+| **Delivery** (Beat) | Looper queries Notion for Transcriptions a reviewer marked `speakers_assigned`, enqueues a processor per transcription. Processor: rebuild the named transcript → `ai-conversations` context generation → upsert the Notion Context → mark `delivered` (stays `speakers_assigned` on failure for retry) |
 
 ```mermaid
 sequenceDiagram
-    participant SI as api/ (stand-in)
+    participant API as chrome-recorder-consumer-api (Beat)
     participant S3 as Recordings bucket
     participant TR as transcript-api (Deepgram)
     participant N as Notion
     participant AIC as ai-conversations-api
-    Note over SI,N: Processing (POST /processing/run)
-    SI->>S3: list projects/*.webm + HeadObject (pitch_id, recorded_by)
-    SI->>S3: presign GET
-    SI->>TR: POST /api/transcription/ {audio_url, strategy:diarized, mode:async}
-    TR-->>SI: {id}; poll GET /api/transcription/{id}/ → {segments[]}
-    SI->>N: create Transcription(pending) + Speakers + Segments
-    SI->>S3: delete audio
+    Note over API,N: Processing
+    API->>S3: list projects/*.webm + HeadObject (pitch_id, recorded_by)
+    API->>S3: presign GET
+    API->>TR: POST /api/transcription/ {audio_url, strategy:diarized, mode:async}
+    TR-->>API: {id}; poll GET /api/transcription/{id}/ → {segments[]}
+    API->>N: create Transcription(pending) + Speakers + Segments
+    API->>S3: delete audio
     Note over N: Review (human): type each Speaker's Person, State → speakers_assigned
-    Note over SI,AIC: Delivery (POST /delivery/run)
-    SI->>N: query Transcriptions where State = speakers_assigned
-    SI->>N: read Segments + Speakers → named transcript
-    SI->>AIC: conversation (prompt) + message (current context + transcript)
-    AIC-->>SI: updated context
-    SI->>N: upsert Context(pitch), State → delivered
+    Note over API,AIC: Delivery
+    API->>N: query Transcriptions where State = speakers_assigned
+    API->>N: read Segments + Speakers → named transcript
+    API->>AIC: conversation (prompt) + message (current context + transcript)
+    AIC-->>API: updated context
+    API->>N: upsert Context(pitch), State → delivered
 ```
 
-**Diarization is `transcript-api`, not `ai-conversations`.** `transcript-api` owns the Deepgram `diarized` strategy (`POST /api/transcription/` `strategy:diarized, mode:async`; poll `GET /api/transcription/{id}/`). `ai-conversations-api` only does the **context-generation conversation**: the stand-in sends the configured prompt as the system message and a user message with three blocks — the **pitch content** (the pitch page's title + body, as background), the **current living context**, and the **named transcript**. The prompt is a deliberately **focused "reduced situation state"** (inspired by the `evolve-situation-state` skill but stripped of its change-log/source-history/metadata cruft): it returns a short markdown living context with **Descripción / Decisiones / Action items (`- [ ]`) / Temas abiertos** sections, evolving the prior context incrementally rather than rewriting history.
+**Diarization is `transcript-api`, not `ai-conversations`.** `transcript-api` owns the Deepgram `diarized` strategy (`POST /api/transcription/` `strategy:diarized, mode:async`; poll `GET /api/transcription/{id}/`). `ai-conversations-api` only does the **context-generation conversation**: the consumer API sends the configured prompt and a user message with three blocks — the **pitch content** (the pitch page's title + body, as background), the **current living context**, and the **named transcript**. The prompt is a deliberately **focused "reduced situation state"** (inspired by the `evolve-situation-state` skill but stripped of its change-log/source-history/metadata cruft): it returns a short markdown living context with **Descripción / Decisiones / Action items (`- [ ]`) / Temas abiertos** sections, evolving the prior context incrementally rather than rewriting history.
 
 ### Notion data model
 
@@ -206,28 +204,23 @@ Four databases under the *Contexto de pitches automático* building-project page
 
 ### Auth + config
 
-The stand-in reaches Notion with a **token** (`NOTION_TOKEN`) and the four DB ids; `transcript-api`/`ai-conversations` via their local URLs; the recordings bucket via the AWS provider chain. See §6.3 / `api/.env.example` for the full env (`NOTION_*`, `TRANSCRIPT_API_URL`, `AI_CONVERSATIONS_*`, `AWS_REGION`). Per-item failures are isolated (logged, audio kept for retry) so one bad recording never blocks the batch.
+The consumer API reaches Notion with a **token** (`NOTION_TOKEN`) and the four DB ids; `transcript-api`/`ai-conversations` via the internal HTTP pool; the recordings bucket via the AWS provider chain (`aioboto3`). The full env (`NOTION_*`, `AI_CONVERSATIONS_*`, `AWS_S3_*`, `REDIS_URL`, service URLs) lives in the consumer-api repo's `.env.example`. Per-item failures are isolated (logged, audio kept for retry) so one bad recording never blocks the batch.
 
-### Known Notion limitations (carry into the real n8n build)
+### Known Notion limitations
 
-- **Personal Access Tokens cannot list workspace users** (`GET /v1/users` → 403). So `Recorded by` (a person field) can't be resolved from an email with a PAT — it's left blank and best-effort. The real n8n should use an **integration token with the user-read capability** if `Recorded by` matters. (This is why Speakers use a free-text `Person`, not a people field.)
-- **Database templates can't be applied via the API.** The *Pitch Trascription* template's useful inline views are linked-database blocks, which the public API can neither instantiate on page-create nor build — true for the stand-in *and* n8n's Notion node. Options: reviewer applies the template manually, rely on the `Segments`/`Speakers` relation properties already on each Transcription page, or set DB-level grouped views.
-- **Invalid Pitch relations are silently dropped.** Notion ignores a relation to a page outside the Pitches DB rather than erroring, yielding a dangling Transcription. The stand-in only validates `pitchId` *format* (32-hex); validating that it's a real Pitches page at `/uploads` time is a worthwhile hardening.
-
-### Still to build: the real n8n workflows
-
-The stand-in mirrors what n8n must do; the remaining work is authoring the three n8n workflows (Upload webhook, Processing schedule/poll, Delivery Notion-poll) against the same services — the only piece not yet built.
+- **Resolving `Recorded by` (a person field) needs an integration token with the user-read capability.** A Personal Access Token gets `403` on `GET /v1/users`, leaving `Recorded by` blank. The consumer API uses a user-read integration token so the happy path resolves the person; a defensive fallback swallows a 403 and leaves it blank. (This is why Speakers use a free-text `Person`, not a people field.)
+- **Database templates can't be applied via the API.** The *Pitch Trascription* template's useful inline views are linked-database blocks, which the public API can neither instantiate on page-create nor build. Options: reviewer applies the template manually, rely on the `Segments`/`Speakers` relation properties already on each Transcription page, or set DB-level grouped views.
+- **Invalid Pitch relations are silently dropped.** Notion ignores a relation to a page outside the Pitches DB rather than erroring, yielding a dangling Transcription. The consumer API validates `pitchId` *format* (32-hex) at upload time; validating that it's a real Pitches page is a worthwhile further hardening.
 
 ## 8. Recordings bucket setup (transient)
 
 Two buckets, neither managed by this repo:
 
 - **`file-uploads-api-prod`** — file-uploads' temp/staging bucket where parts are presigned + assembled. Needs **CORS** with `ExposedHeaders: [ETag]` for the extension origin (browser multipart reads each part's ETag) and an **`AbortIncompleteMultipartUpload`** lifecycle rule so abandoned sessions are reclaimed. Shared by file-uploads-api — merge rules, don't overwrite.
-- **`filadd-chrome-recorder-prod`** — the final destination file-uploads moves assembled recordings to. Transient: a lifecycle rule **expires objects after 7 days** (the backstop that makes "we never retain audio" a system property). n8n's Processing flow deletes each recording once transcribed.
+- **`filadd-chrome-recorder-prod`** — the final destination file-uploads moves assembled recordings to. Transient: a lifecycle rule **expires objects after 7 days** (the backstop that makes "we never retain audio" a system property). The consumer API's Processing job deletes each recording once transcribed.
 
 ## 9. Future work / out of scope
 
-- The real **n8n flows** (Upload webhook, Processing, Delivery) — this repo's `api/` only stands in for the Upload flow locally.
-- Production auth hardening for the stand-in if it is ever deployed (today it is local-only; `API_BASE_URL = http://localhost:8787`).
+- The backend (`chrome-recorder-consumer-api`) lives in its own repo and is deployed separately (its own K8s app/namespace + secrets) — out of scope here; this repo only needs the gateway origin + the Upload wire contract.
 - Tail persistence across browser crashes (IndexedDB) if it becomes a product requirement.
 - Mic device picker.
