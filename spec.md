@@ -9,7 +9,7 @@ A Chrome extension that records Google Meet conversations and uploads them for t
 - **Deterministic downstream**: each profile captures the association it needs (the **pitch id**) *at record time*, stamped as S3 object metadata, so the processing flow never has to reconstruct "which conversation is this?" after the fact.
 - **Audio-transient by design**: the recordings bucket is a transient queue, not an archive. The processing flow deletes each object after transcription; a lifecycle rule expires stragglers. Only transcripts and what's derived from them persist.
 
-The extension uploads through **`chrome-recorder-consumer-api`** (a Filadd FastAPI service, fronted by the **gateway**), which proxies the multipart upload to Filadd's existing **`file-uploads-api`**. That same consumer API owns the downstream work — **Upload** (validate the caller, proxy the multipart upload to `file-uploads-api`), **Processing** (Celery Beat: list the recordings bucket → `transcript-api` diarized transcription → write the Notion Transcription + Segments + Speakers → delete the audio), and **Delivery** (Celery Beat: poll Notion for reviewed transcripts → `ai-conversations-api` context generation → upsert the Notion Context). This repo is the **extension only**; the consumer API lives in the separate `chrome-recorder-consumer-api` repo. See the Notion design docs *Pitch conversations transcriber*, *Multipart Uploads*, *Transcription API*, and *Chrome Recorder Extension*.
+The extension uploads through **`chrome-recorder-consumer-api`** (a Filadd FastAPI service, fronted by the **gateway**), which proxies the multipart upload to Filadd's existing **`file-uploads-api`**. That same consumer API owns the downstream work — **Upload** (validate the caller, proxy the multipart upload to `file-uploads-api`), **Processing** (Celery Beat: list the recordings bucket → `transcript-api` diarized transcription → write the Notion Transcription with the transcript in its page body → delete the audio), and **Delivery** (Celery Beat: poll Notion for reviewed transcripts → `ai-conversations-api` context generation → upsert the Notion Context). This repo is the **extension only**; the consumer API lives in the separate `chrome-recorder-consumer-api` repo. See the Notion design docs *Pitch conversations transcriber*, *Multipart Uploads*, *Transcription API*, and *Chrome Recorder Extension*.
 
 ## 2. Use cases / profiles
 
@@ -49,7 +49,7 @@ flowchart LR
     API -.->|"Processing (Beat): list + presign GET + delete"| S3
     API -->|"diarized transcription"| TR["transcript-api<br/>(Deepgram)"]
     API -->|"Delivery (Beat): context generation"| AIC["ai-conversations-api"]
-    API -->|"Transcriptions / Segments /<br/>Speakers / Contexts"| NOTION["Notion"]
+    API -->|"Transcriptions / Contexts"| NOTION["Notion"]
 ```
 
 (Processing + Delivery run as Celery Beat jobs inside `chrome-recorder-consumer-api` — §7.)
@@ -112,6 +112,7 @@ micSource ─ micGain ──→ destNode (recording)     mic NEVER to speakers (
 - Parts: 5 MiB–5 GiB each (last part any size), max 10,000, **consecutive from 1**.
 - **Bucket CORS must list `ETag` in `ExposeHeaders`** or `response.headers.get("ETag")` silently returns `null` (the classic browser-multipart failure). See §8.
 - **Sequential one-ahead presigning**: the create call issues the part-1 URL and each part call returns only the next URL, so parts upload in order — a single in-flight PUT that suits a streaming recorder.
+- **Presigned-URL TTL must outlive the buffer fill**: the part-1 URL is minted at create but only PUT once the first 5 MiB buffers (~5+ min at audio bitrates), past file-uploads' 300 s default → an expired-URL 403. `chrome-recorder-consumer-api` therefore sends a per-upload `presigned_url_expiration` (its `UPLOAD_PRESIGNED_URL_EXPIRATION`, default 3600 s), which file-uploads applies to every part URL; file-uploads' global default stays 300 s for other callers.
 - Uploads run in the **offscreen document**: MV3 service workers are killed on >30 s fetches / >5 min requests; a `USER_MEDIA` offscreen doc has no such caps.
 - **Object metadata is supplied at create** (`metadata` JSON → S3 object metadata) and is immutable afterwards.
 
@@ -165,7 +166,7 @@ Transcription, speaker review, and living-context delivery run as **Celery Beat 
 
 | Job | Does |
 |---|---|
-| **Processing** (Beat) | Looper lists bucket objects under `projects/` + their `pitch_id`/`recorded_by` metadata, enqueues a processor per recording. Processor: skip if no `pitch_id` → presign a GET → `transcript-api` diarized transcription → create the Notion Transcription (`pending`) + Speakers + Segments → **delete the audio** (kept on failure for retry) |
+| **Processing** (Beat) | Looper lists bucket objects under `projects/` + their `pitch_id`/`recorded_by` metadata and **skips recordings already claimed in Notion**, enqueueing a processor per remaining recording. Processor: skip if no `pitch_id` or already claimed → **create the Notion Transcription in `processing` first — the claim, stamped with the recording key in `Recording`** → presign a GET → `transcript-api` diarized transcription → write the diarized transcript into the page body (a Speaker legend + spoken lines) → promote to `pending` → **delete the audio**. On any failure the page is set to **`failed`** and the audio is left in place; the claim stops it being reprocessed into duplicates (a run can outlast the Beat interval). |
 | **Delivery** (Beat) | Looper queries Notion for Transcriptions a reviewer marked `speakers_assigned`, enqueues a processor per transcription. Processor: rebuild the named transcript → `ai-conversations` context generation → upsert the Notion Context → mark `delivered` (stays `speakers_assigned` on failure for retry) |
 
 ```mermaid
@@ -177,15 +178,17 @@ sequenceDiagram
     participant AIC as ai-conversations-api
     Note over API,N: Processing
     API->>S3: list projects/*.webm + HeadObject (pitch_id, recorded_by)
+    API->>N: skip recordings already claimed (Recording key)
+    API->>N: create Transcription(processing) — claim, before the slow work
     API->>S3: presign GET
     API->>TR: POST /api/transcription/ {audio_url, strategy:diarized, mode:async}
     TR-->>API: {id}; poll GET /api/transcription/{id}/ → {segments[]}
-    API->>N: create Transcription(pending) + Speakers + Segments
-    API->>S3: delete audio
+    API->>N: write transcript to page body, State → pending (or → failed on error)
+    API->>S3: delete audio (success only)
     Note over N: Review (human): type each Speaker's Person, State → speakers_assigned
     Note over API,AIC: Delivery
     API->>N: query Transcriptions where State = speakers_assigned
-    API->>N: read Segments + Speakers → named transcript
+    API->>N: read page body (legend + lines) → named transcript
     API->>AIC: conversation (prompt) + message (current context + transcript)
     AIC-->>API: updated context
     API->>N: upsert Context(pitch), State → delivered
@@ -197,9 +200,7 @@ sequenceDiagram
 
 Four databases under the *Contexto de pitches automático* building-project page (created global + related, **not** per-page nested):
 
-- **Recorder Transcriptions** — one row per recording: `Name`, `State` (select: `pending`/`speakers_assigned`/`delivered`/`failed`), `Pitch` (relation → the existing Pitches DB), `Recorded by` (person), and two-way `Segments`/`Speakers` relations (so they surface inline on the page for the reviewer).
-- **Recorder Segments** — one row per diarized segment: `Order`, `Speaker` (**relation → Recorder Speakers**, not a bare index — renaming a speaker flows to every segment), `Text`, `Start ms`.
-- **Recorder Speakers** — one row per numeric speaker: `Speaker index` and `Person` (**free text** the reviewer types — see limitations).
+- **Recorder Transcriptions** — one row per recording: `Name`, `State` (select: `processing`/`pending`/`speakers_assigned`/`delivered`/`failed`), `Pitch` (relation → the existing Pitches DB), `Recorded by` (person), and `Recording` (text — the S3 key the row was built from; Processing claims a recording by writing this up front, then skips any recording whose key already has a row). The **diarized transcript lives in the page body** (not in child rows): a `## Speakers` legend of `Speaker N → ` bullets the reviewer fills in with names, followed by `## Transcript` lines `Speaker N [mm:ss]: text`. Writing the body is ~2 API calls (one create + a batched block-append, ≤100 blocks/call) instead of one `POST` per segment — far less exposed to a transient Notion blip mid-write. Delivery reads the body back and maps the legend onto the lines.
 - **Recorder Contexts** — one row per pitch: `Pitch` (relation) + `Updated` (date). The living context itself is the **page body** (markdown-ish blocks — headings/bullets/paragraphs), not a property: long prose renders better and isn't capped at a 2000-char rich-text chunk. Delivery replaces the body each run. The durable outcome.
 
 ### Auth + config
@@ -208,8 +209,8 @@ The consumer API reaches Notion with a **token** (`NOTION_TOKEN`) and the four D
 
 ### Known Notion limitations
 
-- **Resolving `Recorded by` (a person field) needs an integration token with the user-read capability.** A Personal Access Token gets `403` on `GET /v1/users`, leaving `Recorded by` blank. The consumer API uses a user-read integration token so the happy path resolves the person; a defensive fallback swallows a 403 and leaves it blank. (This is why Speakers use a free-text `Person`, not a people field.)
-- **Database templates can't be applied via the API.** The *Pitch Trascription* template's useful inline views are linked-database blocks, which the public API can neither instantiate on page-create nor build. Options: reviewer applies the template manually, rely on the `Segments`/`Speakers` relation properties already on each Transcription page, or set DB-level grouped views.
+- **Resolving `Recorded by` (a person field) needs an integration token with the user-read capability.** A Personal Access Token gets `403` on `GET /v1/users`, leaving `Recorded by` blank. The consumer API uses a user-read integration token so the happy path resolves the person; a defensive fallback swallows a 403 and leaves it blank. (This is also why speaker names are reviewer-typed free text in the body legend, not people fields.)
+- **Database templates can't be applied via the API.** The *Pitch Trascription* template's useful inline views are linked-database blocks, which the public API can neither instantiate on page-create nor build. Moot for the transcript now that it lives in the page body, but still relevant for any Pitch-relation or context views: reviewer applies the template manually, or set DB-level grouped views.
 - **Invalid Pitch relations are silently dropped.** Notion ignores a relation to a page outside the Pitches DB rather than erroring, yielding a dangling Transcription. The consumer API validates `pitchId` *format* (32-hex) at upload time; validating that it's a real Pitches page is a worthwhile further hardening.
 
 ## 8. Recordings bucket setup (transient)
@@ -217,7 +218,7 @@ The consumer API reaches Notion with a **token** (`NOTION_TOKEN`) and the four D
 Two buckets, neither managed by this repo:
 
 - **`file-uploads-api-prod`** — file-uploads' temp/staging bucket where parts are presigned + assembled. Needs **CORS** with `ExposedHeaders: [ETag]` for the extension origin (browser multipart reads each part's ETag) and an **`AbortIncompleteMultipartUpload`** lifecycle rule so abandoned sessions are reclaimed. Shared by file-uploads-api — merge rules, don't overwrite.
-- **`filadd-chrome-recorder-prod`** — the final destination file-uploads moves assembled recordings to. Transient: a lifecycle rule **expires objects after 7 days** (the backstop that makes "we never retain audio" a system property). The consumer API's Processing job deletes each recording once transcribed.
+- **`filadd-chrome-recorder-prod`** (region **`sa-east-1`**) — the final destination file-uploads moves assembled recordings to. Transient: a lifecycle rule **expires objects after 7 days** (the backstop that makes "we never retain audio" a system property). The consumer API's Processing job deletes each recording once transcribed. The consumer API's `AWS_S3_REGION` **must** be `sa-east-1`: a presigned GET bakes the region into its signature and can't follow a redirect, so a region mismatch yields `AuthorizationQueryParametersError` (a 400 when `transcript-api`/Deepgram fetches the audio), even though bucket *listing* still works.
 
 ## 9. Future work / out of scope
 
