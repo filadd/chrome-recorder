@@ -9,7 +9,7 @@ A Chrome extension that records Google Meet conversations and uploads them for t
 - **Deterministic downstream**: each profile captures the association it needs (the **pitch id**) *at record time*, stamped as S3 object metadata, so the processing flow never has to reconstruct "which conversation is this?" after the fact.
 - **Audio-transient by design**: the recordings bucket is a transient queue, not an archive. The processing flow deletes each object after transcription; a lifecycle rule expires stragglers. Only transcripts and what's derived from them persist.
 
-The extension uploads through **`chrome-recorder-consumer-api`** (a Filadd FastAPI service, fronted by the **gateway**), which proxies the multipart upload to Filadd's existing **`file-uploads-api`**. That same consumer API owns the downstream work — **Upload** (validate the caller, proxy the multipart upload to `file-uploads-api`), **Processing** (Celery Beat: list the recordings bucket → `transcript-api` diarized transcription → write the Notion Transcription with the transcript in its page body → delete the audio), and **Delivery** (Celery Beat: poll Notion for reviewed transcripts → `ai-conversations-api` context generation → upsert the Notion Context). This repo is the **extension only**; the consumer API lives in the separate `chrome-recorder-consumer-api` repo. See the Notion design docs *Pitch conversations transcriber*, *Multipart Uploads*, *Transcription API*, and *Chrome Recorder Extension*.
+The extension uploads through **`chrome-recorder-consumer-api`** (a Filadd FastAPI service, fronted by the **gateway**), which proxies the multipart upload to Filadd's existing **`file-uploads-api`**. That same consumer API owns the downstream work — **Upload** (validate the caller, proxy the multipart upload to `file-uploads-api`), **Processing** (Celery Beat: list the recordings bucket → `transcript-api` diarized transcription → write the Notion Transcription with the transcript in its page body → delete the audio), and **Delivery** (Celery Beat: poll Notion for reviewed transcripts → rewrite the transcript body with the assigned names → `ai-conversations-api` context generation → upsert the Notion Context). This repo is the **extension only**; the consumer API lives in the separate `chrome-recorder-consumer-api` repo. See the Notion design docs *Pitch conversations transcriber*, *Multipart Uploads*, *Transcription API*, and *Chrome Recorder Extension*.
 
 ## 2. Use cases / profiles
 
@@ -167,7 +167,7 @@ Transcription, speaker review, and living-context delivery run as **Celery Beat 
 | Job | Does |
 |---|---|
 | **Processing** (Beat) | Looper lists bucket objects under `projects/` + their `pitch_id`/`recorded_by` metadata and **skips recordings already claimed in Notion**, enqueueing a processor per remaining recording. Processor: skip if no `pitch_id` or already claimed → **create the Notion Transcription in `processing` first — the claim, stamped with the recording key in `Recording`** → presign a GET → `transcript-api` diarized transcription → write the diarized transcript into the page body (a Speaker legend + spoken lines) → promote to `pending` → **delete the audio**. On any failure the page is set to **`failed`** and the audio is left in place; the claim stops it being reprocessed into duplicates (a run can outlast the Beat interval). |
-| **Delivery** (Beat) | Looper queries Notion for Transcriptions a reviewer marked `speakers_assigned`, enqueues a processor per transcription. Processor: rebuild the named transcript → `ai-conversations` context generation → upsert the Notion Context → mark `delivered` (stays `speakers_assigned` on failure for retry) |
+| **Delivery** (Beat) | Looper queries Notion for Transcriptions a reviewer marked `speakers_assigned`, enqueues a processor per transcription. Processor: rebuild the named transcript from the page body → **rewrite the page body with the assigned names** (the legend's `Speaker N` labels are replaced by the names, so the page reads as the finished conversation; idempotent on retry) → `ai-conversations` context generation → upsert the Notion Context → mark `delivered` (stays `speakers_assigned` on failure for retry) |
 
 ```mermaid
 sequenceDiagram
@@ -189,6 +189,7 @@ sequenceDiagram
     Note over API,AIC: Delivery
     API->>N: query Transcriptions where State = speakers_assigned
     API->>N: read page body (legend + lines) → named transcript
+    API->>N: rewrite page body with assigned names
     API->>AIC: conversation (prompt) + message (current context + transcript)
     AIC-->>API: updated context
     API->>N: upsert Context(pitch), State → delivered
