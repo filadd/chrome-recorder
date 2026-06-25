@@ -1,4 +1,5 @@
 import { t } from "../shared/i18n";
+import { MESSAGE_TARGET, sendMessage, SW_MESSAGE_TYPE } from "../shared/messages";
 import { getSnapshot, onSnapshotChange, UI_STATE, type UiSnapshot } from "../shared/storage";
 
 const OVERLAY_STYLE = `
@@ -26,6 +27,12 @@ const OVERLAY_STYLE = `
     line-height: 1.3;
     white-space: nowrap;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .pill:hover {
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
   }
 
   .pill.attention {
@@ -82,6 +89,13 @@ export const mountOverlay = (): void => {
 
   const pill = document.createElement("div");
   pill.className = "pill";
+  pill.title = t("overlay_open_menu");
+
+  // A content-script click can't grant tabCapture, so the pill only opens the
+  // popup (the actual start/stop control); the SW owns chrome.action.openPopup().
+  pill.addEventListener("click", () => {
+    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.openPopup });
+  });
 
   const dot = document.createElement("span");
   dot.className = "dot";

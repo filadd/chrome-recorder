@@ -36,6 +36,7 @@ export type StopReason = (typeof STOP_REASON)[keyof typeof STOP_REASON];
 
 export const SW_MESSAGE_TYPE = {
   toggleRecording: "toggle-recording",
+  openPopup: "open-popup",
   stopRecording: "stop-recording",
   micMuteChanged: "mic-mute-changed",
   micGranted: "mic-granted",
@@ -70,6 +71,7 @@ export type ContentMessageType = (typeof CONTENT_MESSAGE_TYPE)[keyof typeof CONT
 
 export type SwMessage =
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.toggleRecording }
+  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.openPopup }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.stopRecording; reason: StopReason }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.micMuteChanged; muted: boolean }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.micGranted }

@@ -61,10 +61,13 @@ export default defineManifest({
     },
   ],
 
-  // _execute_action is Chrome's built-in "open the popup" command — no handler.
+  // A named command (not the built-in `_execute_action`) so the SW can open the
+  // popup explicitly via chrome.action.openPopup() — the same entry point the
+  // clickable pill uses. See the chrome.commands.onCommand handler in the SW.
   commands: {
-    _execute_action: {
+    "open-popup": {
       suggested_key: { default: "Ctrl+Shift+S" },
+      description: "__MSG_command_open_popup__",
     },
   },
 });

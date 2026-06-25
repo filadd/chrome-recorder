@@ -145,6 +145,13 @@ const startRecording = async (
   }
 };
 
+// Both the Ctrl+Shift+S command and the in-call pill route here — the SW is the
+// only context that can open the action popup programmatically.
+const openPopup = (): Promise<void> =>
+  chrome.action
+    .openPopup()
+    .catch((error) => console.warn("[recorder] openPopup failed:", error));
+
 const stopRecording = (actor: RecorderActor, reason: StopReason): StartResult => {
   actor.send({ type: RECORDER_EVENT.stop, reason });
   chrome.runtime
@@ -212,6 +219,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         return tab == null ? { status: START_RESULT_STATUS.error } : toggleRecording(actor, tab);
       }
+
+      case SW_MESSAGE_TYPE.openPopup:
+        await openPopup();
+        return undefined;
 
       case SW_MESSAGE_TYPE.stopRecording:
         return stopRecording(actor, message.reason);
@@ -311,6 +322,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   handle().then(sendResponse);
 
   return true;
+});
+
+chrome.commands.onCommand.addListener((command) => {
+  if (command === "open-popup") {
+    openPopup();
+  }
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {

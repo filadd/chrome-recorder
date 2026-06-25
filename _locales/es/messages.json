@@ -186,5 +186,11 @@
         "content": "$1"
       }
     }
+  },
+  "command_open_popup": {
+    "message": "Abrir el menú de Filadd Recorder"
+  },
+  "overlay_open_menu": {
+    "message": "Abrir el menú del grabador"
   }
 }
