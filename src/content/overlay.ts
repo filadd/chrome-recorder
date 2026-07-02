@@ -1,5 +1,4 @@
 import { t } from "../shared/i18n";
-import { MESSAGE_TARGET, sendMessage, SW_MESSAGE_TYPE } from "../shared/messages";
 import { getSnapshot, onSnapshotChange, UI_STATE, type UiSnapshot } from "../shared/storage";
 
 const OVERLAY_STYLE = `
@@ -27,12 +26,7 @@ const OVERLAY_STYLE = `
     line-height: 1.3;
     white-space: nowrap;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    cursor: pointer;
     user-select: none;
-  }
-
-  .pill:hover {
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
   }
 
   .pill.attention {
@@ -88,14 +82,7 @@ export const mountOverlay = (): void => {
   style.textContent = OVERLAY_STYLE;
 
   const pill = document.createElement("div");
-  pill.className = "pill";
-  pill.title = t("overlay_open_menu");
-
-  // A content-script click can't grant tabCapture, so the pill only opens the
-  // popup (the actual start/stop control); the SW owns chrome.action.openPopup().
-  pill.addEventListener("click", () => {
-    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.openPopup });
-  });
+  pill.className = "pill hidden";
 
   const dot = document.createElement("span");
   dot.className = "dot";
@@ -116,8 +103,11 @@ export const mountOverlay = (): void => {
 
     const { state, startedAt, micMuted, error } = snapshot;
 
+    // Purely informative now (no click-to-open affordance), so there is nothing
+    // worth showing while idle — the pill only surfaces once there is a state.
+    pill.classList.toggle("hidden", state === UI_STATE.idle);
     pill.classList.toggle("recording", state === UI_STATE.recording);
-    pill.classList.toggle("attention", state === UI_STATE.idle || state === UI_STATE.needsPermission);
+    pill.classList.toggle("attention", state === UI_STATE.needsPermission);
     pill.classList.toggle("error", state === UI_STATE.error);
     dot.classList.toggle("hidden", state !== UI_STATE.recording && state !== UI_STATE.arming);
 
@@ -133,8 +123,6 @@ export const mountOverlay = (): void => {
       label.textContent = t("overlay_needs_permission");
     } else if (state === UI_STATE.error) {
       label.textContent = `${t("overlay_error")}${error != null ? ` — ${error.slice(0, 120)}` : ""}`;
-    } else {
-      label.textContent = t("overlay_coachmark");
     }
 
     if (state === UI_STATE.recording && timer == null) {

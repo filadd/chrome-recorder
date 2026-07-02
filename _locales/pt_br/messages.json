@@ -17,9 +17,6 @@
   "overlay_error": {
     "message": "Erro na gravação"
   },
-  "overlay_coachmark": {
-    "message": "Clique no ícone da extensão (ou Ctrl+Shift+S) para iniciar a gravação."
-  },
   "overlay_needs_permission": {
     "message": "Conceda permissão de microfone para começar a gravar."
   },
@@ -189,8 +186,5 @@
   },
   "command_open_popup": {
     "message": "Abrir o menu do Filadd Recorder"
-  },
-  "overlay_open_menu": {
-    "message": "Abrir o menu do gravador"
   }
 }

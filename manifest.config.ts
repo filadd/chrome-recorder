@@ -62,8 +62,8 @@ export default defineManifest({
   ],
 
   // A named command (not the built-in `_execute_action`) so the SW can open the
-  // popup explicitly via chrome.action.openPopup() — the same entry point the
-  // clickable pill uses. See the chrome.commands.onCommand handler in the SW.
+  // popup explicitly via chrome.action.openPopup(). See the
+  // chrome.commands.onCommand handler in the SW.
   commands: {
     "open-popup": {
       suggested_key: { default: "Ctrl+Shift+S" },

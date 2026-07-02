@@ -4,7 +4,7 @@
 
 A Chrome extension that records Google Meet conversations and uploads them for transcription — the audio itself is transient. The design is:
 
-- **Simpler for the user**: no screen-share picker, no pinned recording tab. The user starts recording from the extension popup; it stops automatically when they leave the call. An informative pill (above the join button pre-call, next to the avatar in the in-call top bar) shows what's happening and points to the extension icon.
+- **Simpler for the user**: no screen-share picker, no pinned recording tab. The user starts recording from the extension popup; it stops automatically when they leave the call. An informative pill (above the join button pre-call, next to the avatar in the in-call top bar) surfaces state once there is one worth showing — it stays hidden while idle, since a content-script click can't grant the popup any invocation right anyway.
 - **Resilient**: the recording is streamed in parts *during* the call, so if anything crashes mid-call everything uploaded so far is recoverable.
 - **Deterministic downstream**: each profile captures the association it needs (the **pitch id**) *at record time*, stamped as S3 object metadata, so the processing flow never has to reconstruct "which conversation is this?" after the fact.
 - **Audio-transient by design**: the recordings bucket is a transient queue, not an archive. The processing flow deletes each object after transcription; a lifecycle rule expires stragglers. Only transcripts and what's derived from them persist.
@@ -58,7 +58,7 @@ flowchart LR
 
 - **Service worker** (`src/background/service-worker.ts`): hosts the XState actor, handles invocation surfaces (action click, keyboard command), calls `tabCapture.getMediaStreamId`, **reads the `auth._token.local` cookie** (the offscreen doc can't), creates the upload session via `chrome-recorder-consumer-api` (through the gateway), manages the offscreen document lifecycle, watches `tabs.onRemoved`/`onUpdated` as the auto-stop backstop, and runs crash recovery on startup. Holds **no media handles** and does **no uploads**.
 - **Offscreen document** (`src/offscreen/`): the only context allowed to hold MediaStreams long-term. Captures tab audio + mic, mixes, records, buffers, and runs the upload loop — PUTting parts directly to S3 and reporting ETags to the SW. Created with reason `USER_MEDIA` (no lifetime cap); explicitly closed after finalization. Receives the JWT + first presigned part from the SW in `start-capture`.
-- **Content script** (`src/content/`): detects Meet call pages, injects the Shadow-DOM overlay (toggle, recording indicator, coachmark), detects call end.
+- **Content script** (`src/content/`): detects Meet call pages, injects the Shadow-DOM overlay (purely informative — hidden while idle, otherwise shows recording/uploading/error/etc. state), detects call end.
 - **Popup** (`src/popup/`): profile picker, per-profile field form (pitch select), userId setting, pitch-list management in settings, status mirror, and recovery affordances.
 - **Permission page** (`src/permission/`): a visible page whose only job is the one-time mic `getUserMedia` grant — offscreen documents cannot show permission prompts.
 
@@ -126,7 +126,7 @@ XState v5: the only mature option with first-class snapshot persistence, DOM-fre
 
 ## 5. Recording flow (end to end)
 
-1. Content script matches `meet.google.com/([a-z]{3}-[a-z]{4}-[a-z]{3})` → injects the informative pill. While idle the pill points to the extension icon.
+1. Content script matches `meet.google.com/([a-z]{3}-[a-z]{4}-[a-z]{3})` → injects the informative pill, hidden until there is a state worth showing (needs-permission, arming, recording, uploading, finished, error) — it isn't clickable, since a content-script click can never grant `tabCapture` the invocation it needs (see §4.1).
 2. User starts from the popup (or Ctrl+Shift+S). Mic missing → SW opens the permission page; `pitchId` unfilled → the popup form blocks the start; not logged into Filadd (no `auth._token.local`) → the start surfaces an auth error.
 3. SW: `getMediaStreamId({ targetTabId })` → reads the JWT cookie → `POST /uploads/ {profileId, pitchId}` to the consumer API through the gateway (the gateway validates the JWT + injects `X-UserId`; the consumer API resolves the email and creates the file-uploads multipart session) → persists `{session, lastPart: null}` → ensures the offscreen doc → sends `START_CAPTURE { streamId, session, token, firstPart }`.
 4. Offscreen: builds the audio graph, starts MediaRecorder; chunks accumulate in memory; at ≥5 MiB a part is cut → PUT to the held presigned URL (retry w/ backoff, reusing the URL) → read the `ETag` → report it to the SW (for the ledger) **and** to `POST /uploads/part/`, which returns the next part's URL.

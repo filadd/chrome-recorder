@@ -36,7 +36,6 @@ export type StopReason = (typeof STOP_REASON)[keyof typeof STOP_REASON];
 
 export const SW_MESSAGE_TYPE = {
   toggleRecording: "toggle-recording",
-  openPopup: "open-popup",
   stopRecording: "stop-recording",
   micMuteChanged: "mic-mute-changed",
   micGranted: "mic-granted",
@@ -71,19 +70,24 @@ export type ContentMessageType = (typeof CONTENT_MESSAGE_TYPE)[keyof typeof CONT
 
 export type SwMessage =
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.toggleRecording }
-  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.openPopup }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.stopRecording; reason: StopReason }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.micMuteChanged; muted: boolean }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.micGranted }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.closePermissionTab }
-  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.captureStarted }
-  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.captureStopped }
-  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.captureError; message: string }
+  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.captureStarted; attemptId: number }
+  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.captureStopped; attemptId: number }
+  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.captureError; message: string; attemptId: number }
   // The offscreen document can't touch chrome.storage (offscreen docs only get
   // chrome.runtime), so the ETag travels here for the SW to persist.
-  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.partUploaded; partNumber: number; etag: string }
-  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.uploadFinished }
-  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.uploadFailed; message: string }
+  | {
+      target: typeof MESSAGE_TARGET.sw;
+      type: typeof SW_MESSAGE_TYPE.partUploaded;
+      partNumber: number;
+      etag: string;
+      attemptId: number;
+    }
+  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.uploadFinished; attemptId: number }
+  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.uploadFailed; message: string; attemptId: number }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.recoverRetry }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.recoverAbort }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.dismissError };
@@ -98,6 +102,10 @@ export type OffscreenMessage =
       // token (the `auth._token.local` value) and the first presigned part here.
       token: string;
       firstPart: PartTarget;
+      // Echoed back on every message the offscreen doc sends about this capture,
+      // so the SW can tell a stale attempt's report from the current one — see
+      // the guard in service-worker.ts.
+      attemptId: number;
     }
   | { target: typeof MESSAGE_TARGET.offscreen; type: typeof OFFSCREEN_MESSAGE_TYPE.stopCapture }
   | { target: typeof MESSAGE_TARGET.offscreen; type: typeof OFFSCREEN_MESSAGE_TYPE.setMicMuted; muted: boolean }

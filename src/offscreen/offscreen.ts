@@ -21,11 +21,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         break;
       }
 
-      startRecording(message.streamId, message.session, message.token, message.firstPart).catch(
-        (error) => {
-          sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureError, message: String(error) });
-        },
-      );
+      startRecording(
+        message.streamId,
+        message.session,
+        message.token,
+        message.firstPart,
+        message.attemptId,
+      ).catch((error) => {
+        sendMessage({
+          target: MESSAGE_TARGET.sw,
+          type: SW_MESSAGE_TYPE.captureError,
+          message: String(error),
+          attemptId: message.attemptId,
+        });
+      });
       break;
 
     case OFFSCREEN_MESSAGE_TYPE.stopCapture:

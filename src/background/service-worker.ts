@@ -60,10 +60,20 @@ const STARTABLE_STATES = new Set<string>([
   UI_STATE.error,
 ]);
 
+// Bumped once per start attempt and echoed through every offscreen-doc message
+// about that attempt. A late failure/report from an attempt the user has since
+// abandoned (retried after fixing an error, double-clicked start, ...) must not
+// clobber a newer attempt's state — every async continuation below checks it's
+// still the current one before touching the actor.
+let currentAttemptId = 0;
+
 const startRecording = async (
   actor: RecorderActor,
   tab: chrome.tabs.Tab,
 ): Promise<StartResult> => {
+  const attemptId = ++currentAttemptId;
+  const isCurrentAttempt = () => attemptId === currentAttemptId;
+
   // Gesture-sensitive: must be called before any other await or the transient
   // user-gesture window closes. The popup click / keyboard shortcut that got us
   // here is also the activeTab invocation Chrome requires.
@@ -73,7 +83,11 @@ const startRecording = async (
     streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
   } catch (error) {
     console.warn("[recorder] getMediaStreamId rejected:", error);
-    actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+
+    if (isCurrentAttempt()) {
+      actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+    }
+
     return { status: START_RESULT_STATUS.needsInvocation };
   }
 
@@ -95,7 +109,10 @@ const startRecording = async (
   }
 
   if (!(await getMicGranted())) {
-    actor.send({ type: RECORDER_EVENT.needsPermission });
+    if (isCurrentAttempt()) {
+      actor.send({ type: RECORDER_EVENT.needsPermission });
+    }
+
     chrome.tabs.create({ url: chrome.runtime.getURL("src/permission/permission.html") });
     return { status: START_RESULT_STATUS.needsPermission };
   }
@@ -105,7 +122,10 @@ const startRecording = async (
   const token = await getAuthToken();
 
   if (token == null) {
-    actor.send({ type: RECORDER_EVENT.fail, message: "Not signed in to Filadd — open Filadd and log in." });
+    if (isCurrentAttempt()) {
+      actor.send({ type: RECORDER_EVENT.fail, message: "Not signed in to Filadd — open Filadd and log in." });
+    }
+
     return { status: START_RESULT_STATUS.needsAuth };
   }
 
@@ -116,6 +136,10 @@ const startRecording = async (
     );
 
     const session = { key, filepath, profileId: profile.id };
+
+    if (!isCurrentAttempt()) {
+      return { status: START_RESULT_STATUS.error };
+    }
 
     await setPendingUpload({ session, lastPart: null, createdAt: Date.now() });
     await ensureOffscreenDocument();
@@ -131,22 +155,30 @@ const startRecording = async (
         session,
         token,
         firstPart: { partNumber, url },
+        attemptId,
       })
       .catch((error) => {
         console.error("[recorder] failed to reach offscreen document:", error);
-        actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+
+        if (isCurrentAttempt()) {
+          actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+        }
       });
 
     return { status: START_RESULT_STATUS.started };
   } catch (error) {
     console.error("[recorder] start failed:", error);
-    actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+
+    if (isCurrentAttempt()) {
+      actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+    }
+
     return { status: START_RESULT_STATUS.error };
   }
 };
 
-// Both the Ctrl+Shift+S command and the in-call pill route here — the SW is the
-// only context that can open the action popup programmatically.
+// The Ctrl+Shift+S command routes here — the SW is the only context that can
+// open the action popup programmatically.
 const openPopup = (): Promise<void> =>
   chrome.action
     .openPopup()
@@ -204,8 +236,28 @@ const finishSession = async (actor: RecorderActor): Promise<void> => {
   setTimeout(() => actor.send({ type: RECORDER_EVENT.reset }), FINISHED_RESET_MS);
 };
 
+// Reports from the offscreen doc about an attempt the user has since retried
+// past must not resurrect it — see the `currentAttemptId` guard in startRecording.
+const OFFSCREEN_REPORT_TYPES = new Set<string>([
+  SW_MESSAGE_TYPE.captureStarted,
+  SW_MESSAGE_TYPE.captureStopped,
+  SW_MESSAGE_TYPE.captureError,
+  SW_MESSAGE_TYPE.partUploaded,
+  SW_MESSAGE_TYPE.uploadFinished,
+  SW_MESSAGE_TYPE.uploadFailed,
+]);
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isForTarget(message, MESSAGE_TARGET.sw)) {
+    return;
+  }
+
+  if (
+    OFFSCREEN_REPORT_TYPES.has(message.type) &&
+    "attemptId" in message &&
+    message.attemptId !== currentAttemptId
+  ) {
+    console.warn("[recorder] ignoring stale offscreen report:", message.type, message.attemptId);
     return;
   }
 
@@ -219,10 +271,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         return tab == null ? { status: START_RESULT_STATUS.error } : toggleRecording(actor, tab);
       }
-
-      case SW_MESSAGE_TYPE.openPopup:
-        await openPopup();
-        return undefined;
 
       case SW_MESSAGE_TYPE.stopRecording:
         return stopRecording(actor, message.reason);

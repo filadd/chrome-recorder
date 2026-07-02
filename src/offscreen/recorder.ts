@@ -32,12 +32,13 @@ export const startRecording = async (
   session: UploadSession,
   token: string,
   firstPart: PartTarget,
+  attemptId: number,
 ): Promise<void> => {
   starting = true;
   stopRequested = false;
 
   try {
-    await setUpRecording(streamId, session, token, firstPart);
+    await setUpRecording(streamId, session, token, firstPart, attemptId);
   } finally {
     starting = false;
   }
@@ -48,6 +49,7 @@ const setUpRecording = async (
   session: UploadSession,
   token: string,
   firstPart: PartTarget,
+  attemptId: number,
 ): Promise<void> => {
   const tabStream = await navigator.mediaDevices.getUserMedia({
     audio: {
@@ -88,7 +90,7 @@ const setUpRecording = async (
   const buffer = createPartBuffer();
   const uploads = createUploadManager(session, token, firstPart, {
     onPartUploaded: (partNumber, etag) =>
-      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.partUploaded, partNumber, etag }),
+      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.partUploaded, partNumber, etag, attemptId }),
   });
 
   recorder.ondataavailable = (event) => {
@@ -113,20 +115,20 @@ const setUpRecording = async (
     // release the streams (and the OS recording indicator) before the upload
     // finalization, which can take a while on a flaky network.
     cleanup();
-    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureStopped });
+    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureStopped, attemptId });
 
     try {
       await uploads.finalize(buffer.flushFinal());
-      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.uploadFinished });
+      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.uploadFinished, attemptId });
     } catch (error) {
       console.error("[recorder] finalize failed:", error);
-      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.uploadFailed, message: String(error) });
+      sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.uploadFailed, message: String(error), attemptId });
     }
   };
 
   recorder.onerror = (event) => {
     console.error("[recorder] MediaRecorder error:", event);
-    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureError, message: "MediaRecorder error" });
+    sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureError, message: "MediaRecorder error", attemptId });
     recorder.stop();
   };
 
@@ -160,7 +162,7 @@ const setUpRecording = async (
     return;
   }
 
-  sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureStarted });
+  sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureStarted, attemptId });
 };
 
 export const stopRecording = (): void => {
