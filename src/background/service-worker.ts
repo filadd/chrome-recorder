@@ -65,14 +65,32 @@ const STARTABLE_STATES = new Set<string>([
 // abandoned (retried after fixing an error, double-clicked start, ...) must not
 // clobber a newer attempt's state — every async continuation below checks it's
 // still the current one before touching the actor.
-let currentAttemptId = 0;
+//
+// Persisted to chrome.storage.session (not a bare module-level `let`): the SW
+// restarts mid-recording (MV3 kills it after ~30s idle) and an in-memory counter
+// would reset to 0 on wake, misclassifying every subsequent legitimate report
+// from the still-current attempt as stale and silently dropping it — starving
+// the state machine of the events it needs to leave `stopping`/`finalizing`.
+const ATTEMPT_ID_KEY = "currentAttemptId";
+
+let currentAttemptIdPromise: Promise<number> = chrome.storage.session
+  .get<{ currentAttemptId?: number }>(ATTEMPT_ID_KEY)
+  .then((stored) => stored.currentAttemptId ?? 0);
+
+const bumpAttemptId = async (): Promise<number> => {
+  const next = (await currentAttemptIdPromise) + 1;
+  currentAttemptIdPromise = Promise.resolve(next);
+  await chrome.storage.session.set({ [ATTEMPT_ID_KEY]: next });
+
+  return next;
+};
 
 const startRecording = async (
   actor: RecorderActor,
   tab: chrome.tabs.Tab,
 ): Promise<StartResult> => {
-  const attemptId = ++currentAttemptId;
-  const isCurrentAttempt = () => attemptId === currentAttemptId;
+  const attemptId = await bumpAttemptId();
+  const isCurrentAttempt = async () => attemptId === (await currentAttemptIdPromise);
 
   // Gesture-sensitive: must be called before any other await or the transient
   // user-gesture window closes. The popup click / keyboard shortcut that got us
@@ -84,7 +102,7 @@ const startRecording = async (
   } catch (error) {
     console.warn("[recorder] getMediaStreamId rejected:", error);
 
-    if (isCurrentAttempt()) {
+    if (await isCurrentAttempt()) {
       actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
     }
 
@@ -109,7 +127,7 @@ const startRecording = async (
   }
 
   if (!(await getMicGranted())) {
-    if (isCurrentAttempt()) {
+    if (await isCurrentAttempt()) {
       actor.send({ type: RECORDER_EVENT.needsPermission });
     }
 
@@ -122,7 +140,7 @@ const startRecording = async (
   const token = await getAuthToken();
 
   if (token == null) {
-    if (isCurrentAttempt()) {
+    if (await isCurrentAttempt()) {
       actor.send({ type: RECORDER_EVENT.fail, message: "Not signed in to Filadd — open Filadd and log in." });
     }
 
@@ -137,7 +155,7 @@ const startRecording = async (
 
     const session = { key, filepath, profileId: profile.id };
 
-    if (!isCurrentAttempt()) {
+    if (!(await isCurrentAttempt())) {
       return { status: START_RESULT_STATUS.error };
     }
 
@@ -157,10 +175,10 @@ const startRecording = async (
         firstPart: { partNumber, url },
         attemptId,
       })
-      .catch((error) => {
+      .catch(async (error) => {
         console.error("[recorder] failed to reach offscreen document:", error);
 
-        if (isCurrentAttempt()) {
+        if (await isCurrentAttempt()) {
           actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
         }
       });
@@ -169,7 +187,7 @@ const startRecording = async (
   } catch (error) {
     console.error("[recorder] start failed:", error);
 
-    if (isCurrentAttempt()) {
+    if (await isCurrentAttempt()) {
       actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
     }
 
@@ -233,11 +251,17 @@ const finishSession = async (actor: RecorderActor): Promise<void> => {
   await setRecordingTabId(null);
   await closeOffscreenDocument();
 
-  setTimeout(() => actor.send({ type: RECORDER_EVENT.reset }), FINISHED_RESET_MS);
+  setTimeout(async () => {
+    // The attempt is over and the offscreen doc is closed — invalidate its id so
+    // nothing tagged with it can be mistaken for the current attempt from here on.
+    await bumpAttemptId();
+    actor.send({ type: RECORDER_EVENT.reset });
+  }, FINISHED_RESET_MS);
 };
 
 // Reports from the offscreen doc about an attempt the user has since retried
-// past must not resurrect it — see the `currentAttemptId` guard in startRecording.
+// past (or abandoned via dismissError) must not resurrect it — see the
+// `currentAttemptId` guard in startRecording.
 const OFFSCREEN_REPORT_TYPES = new Set<string>([
   SW_MESSAGE_TYPE.captureStarted,
   SW_MESSAGE_TYPE.captureStopped,
@@ -252,16 +276,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return;
   }
 
-  if (
-    OFFSCREEN_REPORT_TYPES.has(message.type) &&
-    "attemptId" in message &&
-    message.attemptId !== currentAttemptId
-  ) {
-    console.warn("[recorder] ignoring stale offscreen report:", message.type, message.attemptId);
-    return;
-  }
-
   const handle = async (): Promise<unknown> => {
+    if (
+      OFFSCREEN_REPORT_TYPES.has(message.type) &&
+      "attemptId" in message &&
+      message.attemptId !== (await currentAttemptIdPromise)
+    ) {
+      console.warn("[recorder] ignoring stale offscreen report:", message.type, message.attemptId);
+      return undefined;
+    }
+
     const actor = await actorPromise;
 
     switch (message.type) {
@@ -362,6 +386,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return undefined;
 
       case SW_MESSAGE_TYPE.dismissError:
+        // A trailing report from this attempt's own async chain (recorder.onerror
+        // → onstop → finalize) could still be in flight; invalidate its id so it
+        // can't resurrect the error via the machine's global FAIL handler.
+        await bumpAttemptId();
         actor.send({ type: RECORDER_EVENT.reset });
         return undefined;
     }
