@@ -5,6 +5,9 @@
   "extension_description": {
     "message": "Graba llamadas de Google Meet y súbelas automáticamente."
   },
+  "overlay_idle": {
+    "message": "Grabador listo"
+  },
   "overlay_recording": {
     "message": "Grabando"
   },

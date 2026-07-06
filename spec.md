@@ -4,7 +4,7 @@
 
 A Chrome extension that records Google Meet conversations and uploads them for transcription — the audio itself is transient. The design is:
 
-- **Simpler for the user**: no screen-share picker, no pinned recording tab. The user starts recording from the extension popup; it stops automatically when they leave the call. An informative pill (above the join button pre-call, next to the avatar in the in-call top bar) surfaces state once there is one worth showing — it stays hidden while idle, since a content-script click can't grant the popup any invocation right anyway.
+- **Simpler for the user**: no screen-share picker, no pinned recording tab. The user starts recording from the extension popup; it stops automatically when they leave the call. An informative pill (above the join button pre-call, next to the avatar in the in-call top bar) always surfaces state, including a neutral "ready" label while idle — a content-script click can't grant the popup any invocation right anyway, so it's never a click affordance, just a presence signal.
 - **Resilient**: the recording is streamed in parts *during* the call, so if anything crashes mid-call everything uploaded so far is recoverable.
 - **Deterministic downstream**: each profile captures the association it needs (the **pitch id**) *at record time*, stamped as S3 object metadata, so the processing flow never has to reconstruct "which conversation is this?" after the fact.
 - **Audio-transient by design**: the recordings bucket is a transient queue, not an archive. The processing flow deletes each object after transcription; a lifecycle rule expires stragglers. Only transcripts and what's derived from them persist.
@@ -58,7 +58,7 @@ flowchart LR
 
 - **Service worker** (`src/background/service-worker.ts`): hosts the XState actor, handles invocation surfaces (action click, keyboard command), calls `tabCapture.getMediaStreamId`, **reads the `auth._token.local` cookie** (the offscreen doc can't), creates the upload session via `chrome-recorder-consumer-api` (through the gateway), manages the offscreen document lifecycle, watches `tabs.onRemoved`/`onUpdated` as the auto-stop backstop, and runs crash recovery on startup. Holds **no media handles** and does **no uploads**.
 - **Offscreen document** (`src/offscreen/`): the only context allowed to hold MediaStreams long-term. Captures tab audio + mic, mixes, records, buffers, and runs the upload loop — PUTting parts directly to S3 and reporting ETags to the SW. Created with reason `USER_MEDIA` (no lifetime cap); explicitly closed after finalization. Receives the JWT + first presigned part from the SW in `start-capture`.
-- **Content script** (`src/content/`): detects Meet call pages, injects the Shadow-DOM overlay (purely informative — hidden while idle, otherwise shows recording/uploading/error/etc. state), detects call end.
+- **Content script** (`src/content/`): detects Meet call pages, injects the Shadow-DOM overlay (purely informative — always visible, showing a neutral "ready" state while idle and recording/uploading/error/etc. otherwise), detects call end.
 - **Popup** (`src/popup/`): profile picker, per-profile field form (pitch select), userId setting, pitch-list management in settings, status mirror, and recovery affordances.
 - **Permission page** (`src/permission/`): a visible page whose only job is the one-time mic `getUserMedia` grant — offscreen documents cannot show permission prompts.
 

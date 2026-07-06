@@ -5,6 +5,9 @@
   "extension_description": {
     "message": "Records Google Meet calls and uploads them automatically."
   },
+  "overlay_idle": {
+    "message": "Recorder ready"
+  },
   "overlay_recording": {
     "message": "Recording"
   },

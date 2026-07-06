@@ -82,7 +82,7 @@ export const mountOverlay = (): void => {
   style.textContent = OVERLAY_STYLE;
 
   const pill = document.createElement("div");
-  pill.className = "pill hidden";
+  pill.className = "pill";
 
   const dot = document.createElement("span");
   dot.className = "dot";
@@ -103,9 +103,6 @@ export const mountOverlay = (): void => {
 
     const { state, startedAt, micMuted, error } = snapshot;
 
-    // Purely informative now (no click-to-open affordance), so there is nothing
-    // worth showing while idle — the pill only surfaces once there is a state.
-    pill.classList.toggle("hidden", state === UI_STATE.idle);
     pill.classList.toggle("recording", state === UI_STATE.recording);
     pill.classList.toggle("attention", state === UI_STATE.needsPermission);
     pill.classList.toggle("error", state === UI_STATE.error);
@@ -123,6 +120,8 @@ export const mountOverlay = (): void => {
       label.textContent = t("overlay_needs_permission");
     } else if (state === UI_STATE.error) {
       label.textContent = `${t("overlay_error")}${error != null ? ` — ${error.slice(0, 120)}` : ""}`;
+    } else if (state === UI_STATE.idle) {
+      label.textContent = t("overlay_idle");
     }
 
     if (state === UI_STATE.recording && timer == null) {
