@@ -86,7 +86,7 @@ export const Popup = () => {
   const profile = getProfile(settings.profileId);
   const enabledProfiles = settings.enabledProfileIds.map(getProfile);
   const fieldValues = settings.meetingFields.values[profile.id] ?? {};
-  const showRecovery = pending != null && !view.busy;
+  const showRecovery = pending != null;
   const showForm = !view.busy && !view.done;
 
   const handleFieldChange = (key: string, value: string) =>
