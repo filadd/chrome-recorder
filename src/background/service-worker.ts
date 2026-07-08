@@ -251,7 +251,16 @@ const finishSession = async (actor: RecorderActor): Promise<void> => {
   await setRecordingTabId(null);
   await closeOffscreenDocument();
 
+  const finishedAttemptId = await currentAttemptIdPromise;
+
   setTimeout(async () => {
+    // A new attempt may have started during the delay — bumping past it would
+    // stale-drop every report from its live recording (frozen part counter, a
+    // machine wedged in `stopping`, and an offscreen doc that never closes).
+    if (finishedAttemptId !== (await currentAttemptIdPromise)) {
+      return;
+    }
+
     // The attempt is over and the offscreen doc is closed — invalidate its id so
     // nothing tagged with it can be mistaken for the current attempt from here on.
     await bumpAttemptId();

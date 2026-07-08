@@ -128,8 +128,17 @@ const setUpRecording = async (
 
   recorder.onerror = (event) => {
     console.error("[recorder] MediaRecorder error:", event);
+
+    // Release the streams before reporting: the SW closes this document on
+    // captureError, and destroying it with live tracks can leak Chrome's OS
+    // capture indicator (the tray icon then sticks until Chrome exits).
+    stopTracks(tabStream, micStream);
+
+    if (recorder.state === "recording") {
+      recorder.stop();
+    }
+
     sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.captureError, message: "MediaRecorder error", attemptId });
-    recorder.stop();
   };
 
   // The captured track ends when the tab closes or navigates — a DOM-independent
