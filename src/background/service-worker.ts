@@ -374,7 +374,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await closeOffscreenDocument();
         return undefined;
 
+      // The pending record doubles as the LIVE attempt's crash ledger, so recovery
+      // must never run while an attempt is in flight — aborting would kill the live
+      // multipart session server-side (every later part PUT 404s), and retrying
+      // would double-finalize it.
       case SW_MESSAGE_TYPE.recoverRetry:
+        if (!STARTABLE_STATES.has(String(actor.getSnapshot().value))) {
+          return { recovered: false };
+        }
+
         try {
           return { recovered: await retryPendingUpload() };
         } catch (error) {
@@ -382,7 +390,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
       case SW_MESSAGE_TYPE.recoverAbort:
-        await abortPendingUpload();
+        if (STARTABLE_STATES.has(String(actor.getSnapshot().value))) {
+          await abortPendingUpload();
+        }
+
         return undefined;
 
       case SW_MESSAGE_TYPE.dismissError:

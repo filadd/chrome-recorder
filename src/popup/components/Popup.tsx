@@ -86,7 +86,10 @@ export const Popup = () => {
   const profile = getProfile(settings.profileId);
   const enabledProfiles = settings.enabledProfileIds.map(getProfile);
   const fieldValues = settings.meetingFields.values[profile.id] ?? {};
-  const showRecovery = pending != null;
+  // The pending record also describes the LIVE attempt's session (written at every
+  // start as its crash ledger), so the banner must stay hidden while busy — surfacing
+  // it mid-recording invites a "discard" that aborts the in-flight upload server-side.
+  const showRecovery = pending != null && !view.busy;
   const showForm = !view.busy && !view.done;
 
   const handleFieldChange = (key: string, value: string) =>
