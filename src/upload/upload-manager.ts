@@ -22,6 +22,11 @@ const TERMINAL_ERRORS = new Set<UploadStatus>([
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Errors that no amount of retrying will heal (an aborted/vanished session 404s,
+// an expired presigned URL 403s, a misconfigured bucket never exposes the ETag) —
+// backoff would only delay surfacing them by a minute-plus of silent retries.
+class FatalUploadError extends Error {}
+
 const backoff = (attempt: number) =>
   Math.min(UPLOAD_BACKOFF_BASE_MS * 2 ** attempt, UPLOAD_BACKOFF_CAP_MS) * (0.5 + Math.random());
 
@@ -51,13 +56,19 @@ export const createUploadManager = (
         const res = await fetch(next.url, { method: "PUT", body: blob });
 
         if (!res.ok) {
-          throw new Error(`Part ${partNumber} PUT failed: ${res.status}`);
+          const message = `Part ${partNumber} PUT failed: ${res.status}`;
+
+          if (res.status < 500 && res.status !== 429) {
+            throw new FatalUploadError(message);
+          }
+
+          throw new Error(message);
         }
 
         const etag = res.headers.get("ETag");
 
         if (etag == null) {
-          throw new Error(
+          throw new FatalUploadError(
             "Missing ETag header — the bucket CORS config must list ETag in ExposeHeaders",
           );
         }
@@ -75,7 +86,7 @@ export const createUploadManager = (
       } catch (error) {
         console.warn(`[upload] part ${partNumber} attempt ${attempt + 1} failed:`, error);
 
-        if (attempt + 1 >= UPLOAD_MAX_ATTEMPTS) {
+        if (error instanceof FatalUploadError || attempt + 1 >= UPLOAD_MAX_ATTEMPTS) {
           throw error;
         }
 
