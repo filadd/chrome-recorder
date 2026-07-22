@@ -1,9 +1,12 @@
 import { AUTH_COOKIE_URL } from "./constants";
 
 // The extension authenticates as the real Filadd user: the `auth._token.local`
-// cookie (set by the Filadd frontend after login) already holds the full
-// `Bearer <JWT>` string, sent verbatim as the Authorization header to the gateway,
-// which validates it and injects `X-UserId` for chrome-recorder-consumer-api.
+// cookie (set by the Filadd frontend after login) holds the full `Bearer <JWT>`
+// string, used as the Authorization header to the gateway, which validates it and
+// injects `X-UserId` for chrome-recorder-consumer-api.
+//
+// The cookie is stored URL-encoded (the scheme/token space is `%20`), so it must
+// be decoded before use — the gateway can't parse `Bearer%20<JWT>`.
 //
 // Read in the service worker (and recovery), NEVER the offscreen document —
 // offscreen docs can only use chrome.runtime, not chrome.cookies. The SW threads
@@ -11,6 +14,10 @@ import { AUTH_COOKIE_URL } from "./constants";
 export const AUTH_COOKIE_NAME = "auth._token.local";
 
 const nonEmpty = (value: string | undefined): value is string => value != null && value.trim() !== "";
+
+// decodeURIComponent is idempotent for an already-decoded value (no `%` sequences
+// in a `Bearer <JWT>` string), so it's safe whether or not the cookie is encoded.
+const decodeToken = (value: string): string => decodeURIComponent(value);
 
 // With AUTH_COOKIE_URL set (the common case — local testing reads the token from
 // localhost, prod from the app origin), read the cookie from exactly that origin
@@ -20,10 +27,11 @@ export const getAuthToken = async (): Promise<string | null> => {
   if (AUTH_COOKIE_URL !== "") {
     const cookie = await chrome.cookies.get({ url: AUTH_COOKIE_URL, name: AUTH_COOKIE_NAME });
 
-    return nonEmpty(cookie?.value) ? cookie!.value : null;
+    return nonEmpty(cookie?.value) ? decodeToken(cookie!.value) : null;
   }
 
   const cookies = await chrome.cookies.getAll({ name: AUTH_COOKIE_NAME });
+  const value = cookies.find((cookie) => nonEmpty(cookie.value))?.value;
 
-  return cookies.find((cookie) => nonEmpty(cookie.value))?.value ?? null;
+  return value != null ? decodeToken(value) : null;
 };
