@@ -30,18 +30,11 @@ export default defineManifest({
     // Local dockerfiles gateway is reached via its `.docker` VIRTUAL_HOST
     // (e.g. http://gateway-service.docker) — needed so the SW's upload fetch isn't blocked.
     "http://*.docker/*",
-    // Local dev frontends are served over http (dockerfiles VIRTUAL_HOSTs);
-    // prod over https. Both needed so chrome.cookies can read auth._token.local.
+    // The token cookie is read only from filadd.com (VITE_AUTH_COOKIE_URL);
+    // `https://*.filadd.com` also covers the gateway.filadd.com upload fetch, and
+    // `http://*.filadd.com` covers a local dev frontend served over http.
     "http://*.filadd.com/*",
-    "http://*.filadd.cl/*",
-    "http://*.filadd.com.ar/*",
-    "http://*.filadd.com.br/*",
-    "http://*.filadd.com.co/*",
     "https://*.filadd.com/*",
-    "https://*.filadd.cl/*",
-    "https://*.filadd.com.ar/*",
-    "https://*.filadd.com.br/*",
-    "https://*.filadd.com.co/*",
     "https://*.amazonaws.com/*",
   ],
 
