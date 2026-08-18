@@ -1,0 +1,24 @@
+{
+  "branches": ["master"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "mkdir -p release && npm version ${nextRelease.version} --no-git-tag-version --allow-same-version && npm run build && cd dist && zip -qr ../release/filadd-chrome-recorder-${nextRelease.version}.zip . && cd .."
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "assets": [
+          {
+            "path": "release/filadd-chrome-recorder-*.zip",
+            "label": "Unpacked extension (load via chrome://extensions → Load unpacked)"
+          }
+        ]
+      }
+    ]
+  ]
+}

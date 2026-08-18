@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+release/
 api/.aws-sam/
 
 # Environment / secrets. Per-mode files (.env.development / .env.production) are
