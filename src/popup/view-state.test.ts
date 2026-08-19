@@ -9,30 +9,31 @@ const snapshot = (state: UiSnapshot["state"]): UiSnapshot => ({ ...DEFAULT_SNAPS
 
 const settings = (patch: Partial<Settings> = {}): Settings => ({
   ...DEFAULT_SETTINGS,
-  userId: "ana@filadd.com",
   ...patch,
 });
 
 describe("deriveView", () => {
-  it("flags first run when no identifier is set", () => {
-    expect(deriveView(snapshot("idle"), settings({ userId: "" }), true, "abc").firstRun).toBe(true);
-    expect(deriveView(snapshot("idle"), settings({ userId: "  " }), true, "abc").firstRun).toBe(
-      true,
-    );
-    expect(deriveView(snapshot("idle"), settings(), true, "abc").firstRun).toBe(false);
+  it("flags first run until there is a session", () => {
+    expect(deriveView(snapshot("idle"), settings(), true, "abc", false).firstRun).toBe(true);
+    expect(deriveView(snapshot("idle"), settings(), true, "abc", true).firstRun).toBe(false);
+  });
+
+  it("cannot start without a session", () => {
+    expect(deriveView(snapshot("finished"), settings(), true, "abc", false).canStart).toBe(false);
+    expect(deriveView(snapshot("idle"), settings(), false, "abc", false).canStart).toBe(false);
   });
 
   it("marks active recording states as busy", () => {
     for (const state of ["arming", "recording", "stopping", "finalizing"] as const) {
-      expect(deriveView(snapshot(state), settings(), true, "abc").busy).toBe(true);
+      expect(deriveView(snapshot(state), settings(), true, "abc", true).busy).toBe(true);
     }
 
-    expect(deriveView(snapshot("idle"), settings(), true, "abc").busy).toBe(false);
+    expect(deriveView(snapshot("idle"), settings(), true, "abc", true).busy).toBe(false);
   });
 
   it("offers a new recording after finished or error", () => {
     for (const state of ["finished", "error"] as const) {
-      const view = deriveView(snapshot(state), settings(), true, "abc");
+      const view = deriveView(snapshot(state), settings(), true, "abc", true);
 
       expect(view.done).toBe(true);
       expect(view.ctaKind).toBe("newRecording");
@@ -41,13 +42,13 @@ describe("deriveView", () => {
   });
 
   it("prioritizes new recording over a missing mic grant", () => {
-    expect(deriveView(snapshot("finished"), settings(), false, "abc").ctaKind).toBe(
+    expect(deriveView(snapshot("finished"), settings(), false, "abc", true).ctaKind).toBe(
       "newRecording",
     );
   });
 
   it("asks for the mic before checking the meet tab", () => {
-    const view = deriveView(snapshot("idle"), settings(), false, null);
+    const view = deriveView(snapshot("idle"), settings(), false, null, true);
 
     expect(view.ctaKind).toBe("grantMic");
     expect(view.canStart).toBe(true);
@@ -61,6 +62,7 @@ describe("deriveView", () => {
       }),
       true,
       null,
+      true,
     );
     expect(project.notOnMeet).toBe(false);
     expect(project.ctaKind).toBe("start");
@@ -74,6 +76,7 @@ describe("deriveView", () => {
       }),
       true,
       "abc",
+      true,
     );
     expect(partial.ctaKind).toBe("start");
     expect(partial.canStart).toBe(false);
@@ -85,6 +88,7 @@ describe("deriveView", () => {
       }),
       true,
       "abc",
+      true,
     );
     expect(filled.canStart).toBe(true);
   });

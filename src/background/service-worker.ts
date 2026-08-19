@@ -1,7 +1,7 @@
 import type { Actor } from "xstate";
 
 import { getProfile } from "../profiles/profiles";
-import { getAuthToken } from "../shared/auth-token";
+import { getAccessToken } from "../shared/auth-session";
 import { FINISHED_RESET_MS } from "../shared/constants";
 import { extractMeetSlug } from "../shared/meet";
 import {
@@ -11,6 +11,7 @@ import {
   OFFSCREEN_MESSAGE_TYPE,
   STOP_REASON,
   SW_MESSAGE_TYPE,
+  type FreshTokenResponse,
   type StopReason,
 } from "../shared/messages";
 import {
@@ -29,6 +30,7 @@ import {
 import { restoreRecorderActor } from "../state/actor";
 import { RECORDER_EVENT, type recorderMachine } from "../state/machine";
 import { createUpload } from "../upload/api-client";
+import { refreshSession } from "./auth-refresh";
 import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen-host";
 import { abortPendingUpload, retryPendingUpload } from "./recovery";
 
@@ -135,13 +137,13 @@ const startRecording = async (
     return { status: START_RESULT_STATUS.needsPermission };
   }
 
-  // The offscreen doc can't read chrome.cookies, so the SW resolves the Filadd
-  // JWT here and passes it down with the session.
-  const token = await getAuthToken();
+  // The offscreen doc can't read chrome.storage, so the SW resolves the extension's
+  // own access token here and passes it down with the session.
+  const token = await getAccessToken();
 
   if (token == null) {
     if (await isCurrentAttempt()) {
-      actor.send({ type: RECORDER_EVENT.fail, message: "Not signed in to Filadd — open Filadd and log in." });
+      actor.send({ type: RECORDER_EVENT.fail, message: "Not signed in — open the extension and log in." });
     }
 
     return { status: START_RESULT_STATUS.needsAuth };
@@ -151,6 +153,7 @@ const startRecording = async (
     const { key, filepath, partNumber, url } = await createUpload(
       { profileId: profile.id, pitchId: fields.pitchId },
       token,
+      refreshSession,
     );
 
     const session = { key, filepath, profileId: profile.id };
@@ -158,6 +161,10 @@ const startRecording = async (
     if (!(await isCurrentAttempt())) {
       return { status: START_RESULT_STATUS.error };
     }
+
+    // createUpload may have refreshed the token mid-call; hand the offscreen loop the
+    // freshest one so it doesn't open on a token that's already been rotated out.
+    const startToken = (await getAccessToken()) ?? token;
 
     await setPendingUpload({ session, lastPart: null, createdAt: Date.now() });
     await ensureOffscreenDocument();
@@ -171,7 +178,7 @@ const startRecording = async (
         type: OFFSCREEN_MESSAGE_TYPE.startCapture,
         streamId,
         session,
-        token,
+        token: startToken,
         firstPart: { partNumber, url },
         attemptId,
       })
@@ -278,6 +285,7 @@ const OFFSCREEN_REPORT_TYPES = new Set<string>([
   SW_MESSAGE_TYPE.partUploaded,
   SW_MESSAGE_TYPE.uploadFinished,
   SW_MESSAGE_TYPE.uploadFailed,
+  SW_MESSAGE_TYPE.requestFreshToken,
 ]);
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -292,6 +300,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       message.attemptId !== (await currentAttemptIdPromise)
     ) {
       console.warn("[recorder] ignoring stale offscreen report:", message.type, message.attemptId);
+
+      // For a stale requestFreshToken this undefined reply reads as a null token in the
+      // offscreen doc, so an abandoned attempt gives up its part instead of refreshing.
       return undefined;
     }
 
@@ -375,6 +386,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         await setRecordingTabId(null);
         await closeOffscreenDocument();
         return undefined;
+
+      // The offscreen doc hit an expired token mid-recording and can't refresh itself
+      // (no storage access). Refresh here (deduped) and hand back the fresh token; null
+      // means the session is dead or the refresh failed and the part upload gives up.
+      case SW_MESSAGE_TYPE.requestFreshToken:
+        return { token: await refreshSession() } satisfies FreshTokenResponse;
 
       case SW_MESSAGE_TYPE.captureError:
         console.error("[recorder] capture error:", message.message);

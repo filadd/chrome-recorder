@@ -47,11 +47,17 @@
   "popup_status_needsPermission": {
     "message": "Falta permiso de micrófono"
   },
-  "popup_userid_label": {
-    "message": "Tu identificador"
-  },
-  "popup_userid_placeholder": {
+  "login_email_placeholder": {
     "message": "ej: tu@email.com"
+  },
+  "settings_account_label": {
+    "message": "Cuenta"
+  },
+  "settings_log_out": {
+    "message": "Cerrar sesión"
+  },
+  "settings_not_signed_in": {
+    "message": "No hay sesión iniciada."
   },
   "popup_grant_mic": {
     "message": "Otorgar micrófono"
@@ -125,14 +131,52 @@
   "overlay_mic_muted": {
     "message": "mic silenciado"
   },
-  "onboarding_welcome_title": {
-    "message": "Bienvenido a Filadd Recorder"
+  "login_email_title": {
+    "message": "Iniciá sesión en Filadd Recorder"
   },
-  "onboarding_identifier_body": {
-    "message": "Tu identificador etiqueta cada grabación. Configuralo una vez — no se te vuelve a pedir."
+  "login_email_body": {
+    "message": "Te enviaremos un código de 6 dígitos por email."
   },
-  "onboarding_continue": {
-    "message": "Continuar →"
+  "login_send_code": {
+    "message": "Enviar código →"
+  },
+  "login_sending": {
+    "message": "Enviando…"
+  },
+  "login_code_title": {
+    "message": "Ingresá el código"
+  },
+  "login_code_body": {
+    "message": "Enviado a $EMAIL$.",
+    "placeholders": {
+      "email": {
+        "content": "$1"
+      }
+    }
+  },
+  "login_code_placeholder": {
+    "message": "000000"
+  },
+  "login_verify": {
+    "message": "Verificar →"
+  },
+  "login_verifying": {
+    "message": "Verificando…"
+  },
+  "login_resend": {
+    "message": "Reenviar código"
+  },
+  "login_change_email": {
+    "message": "‹ Usar otro email"
+  },
+  "login_error_send": {
+    "message": "No pudimos enviar el código. Probá de nuevo."
+  },
+  "login_error_code": {
+    "message": "El código es incorrecto o expiró."
+  },
+  "login_error_rate": {
+    "message": "Demasiados intentos. Esperá un momento."
   },
   "onboarding_mic_title": {
     "message": "Permitir acceso al micrófono"

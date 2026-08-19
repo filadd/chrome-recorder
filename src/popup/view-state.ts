@@ -33,12 +33,14 @@ export const deriveView = (
   settings: Settings,
   micGranted: boolean,
   activeSlug: string | null,
+  hasSession: boolean,
 ): PopupView => {
   const profile = getProfile(settings.profileId);
 
   const busy = BUSY_STATES.includes(snapshot.state);
   const done = DONE_STATES.includes(snapshot.state);
-  const firstRun = settings.userId.trim() === "";
+  // Onboarding (which now hosts login) shows until the user has a stored session.
+  const firstRun = !hasSession;
   const notOnMeet = profile.requiresMeetTab === true && activeSlug == null;
   const needsMic = !micGranted;
 
@@ -56,9 +58,10 @@ export const deriveView = (
         : CTA_KINDS.start;
 
   const canStart =
-    ctaKind === CTA_KINDS.newRecording ||
-    ctaKind === CTA_KINDS.grantMic ||
-    (ctaKind === CTA_KINDS.start && requiredFilled);
+    hasSession &&
+    (ctaKind === CTA_KINDS.newRecording ||
+      ctaKind === CTA_KINDS.grantMic ||
+      (ctaKind === CTA_KINDS.start && requiredFilled));
 
   return { firstRun, busy, done, notOnMeet, needsMic, ctaKind, canStart };
 };
