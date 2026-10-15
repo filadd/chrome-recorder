@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { getProfile } from "../../profiles/profiles";
+import { clearSession, setSession } from "../../shared/auth-session";
+import { useAuthSession } from "../../shared/hooks/useAuthSession";
 import { useMicGranted } from "../../shared/hooks/useMicGranted";
 import { usePendingUpload } from "../../shared/hooks/usePendingUpload";
 import { useSettings } from "../../shared/hooks/useSettings";
@@ -32,13 +34,15 @@ export const Popup = () => {
   const { settings, loaded: settingsLoaded, update } = useSettings();
   const [micGranted, micLoaded] = useMicGranted();
   const [pending, pendingLoaded] = usePendingUpload();
+  const [session, sessionLoaded] = useAuthSession();
   const { slug, loaded: tabLoaded } = useActiveMeetTab();
 
-  const loaded = snapshotLoaded && settingsLoaded && micLoaded && pendingLoaded && tabLoaded;
+  const loaded =
+    snapshotLoaded && settingsLoaded && micLoaded && pendingLoaded && sessionLoaded && tabLoaded;
 
   const [overlay, setOverlay] = useState<Overlay>("none");
   const [starting, setStarting] = useState(false);
-  const view = deriveView(snapshot, settings, micGranted, slug);
+  const view = deriveView(snapshot, settings, micGranted, slug, session != null);
 
   // The SW round-trip (toggle → arming snapshot) takes a beat; show an
   // optimistic loading state on the start button until the snapshot moves
@@ -116,14 +120,16 @@ export const Popup = () => {
       {overlay === "onboarding" ? (
         <OnboardingOverlay
           micGranted={micGranted}
-          onSaveUserId={(userId) => update({ userId })}
+          onAuthenticated={setSession}
           onClose={() => setOverlay("none")}
         />
       ) : null}
       {overlay === "settings" ? (
         <SettingsOverlay
           settings={settings}
+          session={session}
           onUpdate={update}
+          onLogout={clearSession}
           onClose={() => setOverlay("none")}
         />
       ) : null}

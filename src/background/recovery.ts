@@ -1,6 +1,7 @@
-import { getAuthToken } from "../shared/auth-token";
+import { getAccessToken } from "../shared/auth-session";
 import { clearPendingUpload, getPendingUpload } from "../shared/storage";
-import { abortUpload, getUploadStatus, recordPart, UPLOAD_STATUS } from "../upload/api-client";
+import { abortUpload, ApiError, getUploadStatus, recordPart, UPLOAD_STATUS } from "../upload/api-client";
+import { refreshSession } from "./auth-refresh";
 
 // Recovery finalizes what was already uploaded — capture itself cannot resume after
 // a crash. The server owns the parts ledger now, so recovery just reconciles the
@@ -13,21 +14,26 @@ export const retryPendingUpload = async (): Promise<boolean> => {
     return false;
   }
 
-  const token = await getAuthToken();
+  const token = await getAccessToken();
 
   if (token == null) {
-    // No Filadd session to authenticate with — leave the pending upload for a
-    // later retry rather than dropping it.
+    // No session to authenticate with — leave the pending upload for a later retry
+    // rather than dropping it.
     return false;
   }
 
   let status: string;
 
   try {
-    status = (await getUploadStatus(pending.session.key, token)).status;
-  } catch {
-    // The session is gone (404) or unreachable — nothing to finalize.
-    await clearPendingUpload();
+    status = (await getUploadStatus(pending.session.key, token, refreshSession)).status;
+  } catch (error) {
+    // Only a 404 proves the upload session is gone. An unreachable API, a transient
+    // refresh failure, or a dead login (the user signs in again) may still let a later
+    // retry finalize the uploaded prefix, so the pending upload is kept for those.
+    if (error instanceof ApiError && error.status === 404) {
+      await clearPendingUpload();
+    }
+
     return false;
   }
 
@@ -40,7 +46,11 @@ export const retryPendingUpload = async (): Promise<boolean> => {
   // Finalize the uploaded prefix: re-send the last recorded part with complete:true
   // (idempotent on a matching ETag).
   if (status === UPLOAD_STATUS.pending && pending.lastPart != null) {
-    await recordPart({ key: pending.session.key, ...pending.lastPart, complete: true }, token);
+    await recordPart(
+      { key: pending.session.key, ...pending.lastPart, complete: true },
+      token,
+      refreshSession,
+    );
     await clearPendingUpload();
     return true;
   }
@@ -57,10 +67,10 @@ export const abortPendingUpload = async (): Promise<void> => {
     return;
   }
 
-  const token = await getAuthToken();
+  const token = await getAccessToken();
 
   if (token != null) {
-    await abortUpload(pending.session.key, token).catch(() => undefined);
+    await abortUpload(pending.session.key, token, refreshSession).catch(() => undefined);
   }
 
   await clearPendingUpload();

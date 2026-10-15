@@ -46,6 +46,7 @@ export const SW_MESSAGE_TYPE = {
   partUploaded: "part-uploaded",
   uploadFinished: "upload-finished",
   uploadFailed: "upload-failed",
+  requestFreshToken: "request-fresh-token",
   recoverRetry: "recover-retry",
   recoverAbort: "recover-abort",
   dismissError: "dismiss-error",
@@ -88,6 +89,7 @@ export type SwMessage =
     }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.uploadFinished; attemptId: number }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.uploadFailed; message: string; attemptId: number }
+  | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.requestFreshToken; attemptId: number }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.recoverRetry }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.recoverAbort }
   | { target: typeof MESSAGE_TARGET.sw; type: typeof SW_MESSAGE_TYPE.dismissError };
@@ -98,8 +100,8 @@ export type OffscreenMessage =
       type: typeof OFFSCREEN_MESSAGE_TYPE.startCapture;
       streamId: string;
       session: UploadSession;
-      // The offscreen doc can't read chrome.cookies, so the SW passes the bearer
-      // token (the `auth._token.local` value) and the first presigned part here.
+      // The offscreen doc can't read chrome.storage, so the SW passes the bearer
+      // token (the stored session's access token) and the first presigned part here.
       token: string;
       firstPart: PartTarget;
       // Echoed back on every message the offscreen doc sends about this capture,
@@ -118,6 +120,13 @@ export type ContentMessage = {
 };
 
 export type Message = SwMessage | OffscreenMessage | ContentMessage;
+
+// The SW's reply to a requestFreshToken message: the fresh `Bearer <JWT>`, or null when
+// refresh was impossible (no session, hard rejection, or a stale attempt) — the offscreen
+// doc then gives up the part and the recording fails.
+export interface FreshTokenResponse {
+  token: string | null;
+}
 
 export const sendMessage = (message: Message): Promise<unknown> =>
   chrome.runtime.sendMessage(message).catch(() => undefined);

@@ -47,11 +47,17 @@
   "popup_status_needsPermission": {
     "message": "Microphone permission missing"
   },
-  "popup_userid_label": {
-    "message": "Your identifier"
-  },
-  "popup_userid_placeholder": {
+  "login_email_placeholder": {
     "message": "e.g. you@email.com"
+  },
+  "settings_account_label": {
+    "message": "Account"
+  },
+  "settings_log_out": {
+    "message": "Log out"
+  },
+  "settings_not_signed_in": {
+    "message": "Not signed in."
   },
   "popup_grant_mic": {
     "message": "Grant microphone"
@@ -125,14 +131,52 @@
   "overlay_mic_muted": {
     "message": "mic muted"
   },
-  "onboarding_welcome_title": {
-    "message": "Welcome to Filadd Recorder"
+  "login_email_title": {
+    "message": "Sign in to Filadd Recorder"
   },
-  "onboarding_identifier_body": {
-    "message": "Your identifier tags every recording. Set it once — you won't be asked again."
+  "login_email_body": {
+    "message": "We'll email you a 6-digit code."
   },
-  "onboarding_continue": {
-    "message": "Continue →"
+  "login_send_code": {
+    "message": "Send code →"
+  },
+  "login_sending": {
+    "message": "Sending…"
+  },
+  "login_code_title": {
+    "message": "Enter the code"
+  },
+  "login_code_body": {
+    "message": "Sent to $EMAIL$.",
+    "placeholders": {
+      "email": {
+        "content": "$1"
+      }
+    }
+  },
+  "login_code_placeholder": {
+    "message": "000000"
+  },
+  "login_verify": {
+    "message": "Verify →"
+  },
+  "login_verifying": {
+    "message": "Verifying…"
+  },
+  "login_resend": {
+    "message": "Resend code"
+  },
+  "login_change_email": {
+    "message": "‹ Use a different email"
+  },
+  "login_error_send": {
+    "message": "We couldn't send the code. Try again."
+  },
+  "login_error_code": {
+    "message": "That code is wrong or expired."
+  },
+  "login_error_rate": {
+    "message": "Too many attempts. Wait a moment."
   },
   "onboarding_mic_title": {
     "message": "Allow microphone access"

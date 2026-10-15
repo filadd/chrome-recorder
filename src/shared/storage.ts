@@ -43,7 +43,6 @@ export interface PitchEntry {
 
 export interface Settings {
   profileId: ProfileId;
-  userId: string;
   enabledProfileIds: ProfileId[];
   meetingFields: MeetingFields;
   pitches: PitchEntry[];
@@ -60,7 +59,6 @@ export interface PendingUpload {
 
 export const DEFAULT_SETTINGS: Settings = {
   profileId: "project",
-  userId: "",
   enabledProfileIds: ["project"],
   meetingFields: { slug: null, values: {} },
   pitches: [],
@@ -97,8 +95,10 @@ export const normalizeSettings = (stored: Partial<Settings> | undefined): Settin
     merged.pitches = [];
   }
 
-  // Drop the dropped per-pitch participants memory if it lingers in stored settings.
+  // Drop fields removed from the schema if they linger in stored settings: the
+  // per-pitch participants memory and the pre-login manual `userId` identifier.
   delete (merged as Settings & { participantsByPitch?: unknown }).participantsByPitch;
+  delete (merged as Settings & { userId?: unknown }).userId;
 
   return merged;
 };

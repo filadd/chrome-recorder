@@ -8,6 +8,7 @@ import {
   MESSAGE_TARGET,
   sendMessage,
   SW_MESSAGE_TYPE,
+  type FreshTokenResponse,
   type PartTarget,
   type UploadSession,
 } from "../shared/messages";
@@ -91,6 +92,16 @@ const setUpRecording = async (
   const uploads = createUploadManager(session, token, firstPart, {
     onPartUploaded: (partNumber, etag) =>
       sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.partUploaded, partNumber, etag, attemptId }),
+
+    // The offscreen doc can't read storage or reach the auth service — ask the SW to
+    // refresh (tagged with this attempt so a stale one is dropped) and read the token back.
+    requestFreshToken: async () => {
+      const response = await chrome.runtime
+        .sendMessage({ target: MESSAGE_TARGET.sw, type: SW_MESSAGE_TYPE.requestFreshToken, attemptId })
+        .catch(() => undefined);
+
+      return (response as FreshTokenResponse | undefined)?.token ?? null;
+    },
   });
 
   recorder.ondataavailable = (event) => {
