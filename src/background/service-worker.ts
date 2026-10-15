@@ -33,23 +33,10 @@ import { createUpload } from "../upload/api-client";
 import { refreshSession } from "./auth-refresh";
 import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen-host";
 import { abortPendingUpload, retryPendingUpload } from "./recovery";
+import { resolveStartFailure } from "./resolve-start-failure";
+import { NOT_SIGNED_IN_MESSAGE, START_RESULT_STATUS, type StartResult } from "./start-result";
 
 type RecorderActor = Actor<typeof recorderMachine>;
-
-// The outcome of a start/stop attempt, reported back to the popup.
-export const START_RESULT_STATUS = {
-  started: "started",
-  stopped: "stopped",
-  needsInvocation: "needs-invocation",
-  needsMetadata: "needs-metadata",
-  needsPermission: "needs-permission",
-  needsAuth: "needs-auth",
-  error: "error",
-} as const;
-
-export type StartResultStatus = (typeof START_RESULT_STATUS)[keyof typeof START_RESULT_STATUS];
-
-export type StartResult = { status: StartResultStatus };
 
 // Listeners must be registered synchronously on every SW wake-up; the actor promise
 // is created eagerly and awaited inside handlers.
@@ -143,7 +130,7 @@ const startRecording = async (
 
   if (token == null) {
     if (await isCurrentAttempt()) {
-      actor.send({ type: RECORDER_EVENT.fail, message: "Not signed in — open the extension and log in." });
+      actor.send({ type: RECORDER_EVENT.fail, message: NOT_SIGNED_IN_MESSAGE });
     }
 
     return { status: START_RESULT_STATUS.needsAuth };
@@ -194,11 +181,13 @@ const startRecording = async (
   } catch (error) {
     console.error("[recorder] start failed:", error);
 
+    const { status, message } = await resolveStartFailure(error);
+
     if (await isCurrentAttempt()) {
-      actor.send({ type: RECORDER_EVENT.fail, message: String(error) });
+      actor.send({ type: RECORDER_EVENT.fail, message });
     }
 
-    return { status: START_RESULT_STATUS.error };
+    return { status };
   }
 };
 
