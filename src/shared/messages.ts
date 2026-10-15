@@ -100,8 +100,8 @@ export type OffscreenMessage =
       type: typeof OFFSCREEN_MESSAGE_TYPE.startCapture;
       streamId: string;
       session: UploadSession;
-      // The offscreen doc can't read chrome.cookies, so the SW passes the bearer
-      // token (the `auth._token.local` value) and the first presigned part here.
+      // The offscreen doc can't read chrome.storage, so the SW passes the bearer
+      // token (the stored session's access token) and the first presigned part here.
       token: string;
       firstPart: PartTarget;
       // Echoed back on every message the offscreen doc sends about this capture,
