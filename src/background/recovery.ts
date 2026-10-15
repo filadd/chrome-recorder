@@ -1,6 +1,6 @@
 import { getAccessToken } from "../shared/auth-session";
 import { clearPendingUpload, getPendingUpload } from "../shared/storage";
-import { abortUpload, getUploadStatus, recordPart, UPLOAD_STATUS } from "../upload/api-client";
+import { abortUpload, ApiError, getUploadStatus, recordPart, UPLOAD_STATUS } from "../upload/api-client";
 import { refreshSession } from "./auth-refresh";
 
 // Recovery finalizes what was already uploaded — capture itself cannot resume after
@@ -26,9 +26,14 @@ export const retryPendingUpload = async (): Promise<boolean> => {
 
   try {
     status = (await getUploadStatus(pending.session.key, token, refreshSession)).status;
-  } catch {
-    // The session is gone (404) or unreachable — nothing to finalize.
-    await clearPendingUpload();
+  } catch (error) {
+    // Only a 404 proves the upload session is gone. An unreachable API, a transient
+    // refresh failure, or a dead login (the user signs in again) may still let a later
+    // retry finalize the uploaded prefix, so the pending upload is kept for those.
+    if (error instanceof ApiError && error.status === 404) {
+      await clearPendingUpload();
+    }
+
     return false;
   }
 

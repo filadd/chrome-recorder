@@ -9,6 +9,17 @@ import { API_BASE_URL, API_PATH_PREFIX } from "../shared/constants";
 // itself). Passing it is what lets a call survive an access-token expiry mid-recording.
 export type OnExpiredToken = () => Promise<string | null>;
 
+// Carries the HTTP status so a caller can tell a vanished upload (404) from an auth
+// or transient failure, which it may want to retry later instead.
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 // The token is the full `Bearer <JWT>` string, sent verbatim as Authorization. Paths
 // carry a trailing slash and the `/api/chrome-recorder` gateway prefix.
 const request = async <T>(
@@ -45,7 +56,7 @@ const request = async <T>(
     }
   }
 
-  throw new Error(`API ${method} ${path} failed: ${res.status} ${text}`);
+  throw new ApiError(`API ${method} ${path} failed: ${res.status} ${text}`, res.status);
 };
 
 const isExpiredToken = (body: string): boolean => {

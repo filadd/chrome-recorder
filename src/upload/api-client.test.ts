@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EXPIRED_TOKEN_ERROR_CODE } from "@filadd/phi-plus-core/dist/server";
 
-import { createUpload } from "./api-client";
+import { ApiError, createUpload } from "./api-client";
 
 const json = (body: unknown, status: number): Response =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -43,7 +43,7 @@ describe("api-client onExpiredToken retry", () => {
     vi.stubGlobal("fetch", vi.fn(async () => json({ detail: "boom" }, 500)));
     const onExpiredToken = vi.fn();
 
-    await expect(createUpload(payload, "t", onExpiredToken)).rejects.toThrow();
+    await expect(createUpload(payload, "t", onExpiredToken)).rejects.toMatchObject({ status: 500 });
     expect(onExpiredToken).not.toHaveBeenCalled();
   });
 
@@ -60,7 +60,7 @@ describe("api-client onExpiredToken retry", () => {
     vi.stubGlobal("fetch", fetchMock);
     const onExpiredToken = vi.fn(async () => null);
 
-    await expect(createUpload(payload, "t", onExpiredToken)).rejects.toThrow();
+    await expect(createUpload(payload, "t", onExpiredToken)).rejects.toBeInstanceOf(ApiError);
     expect(onExpiredToken).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
