@@ -9,7 +9,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("requestEmailCode", () => {
-  it("posts the init request with a base locale and resolves on 204", async () => {
+  it("posts the init request with a country locale and resolves on 204", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -17,7 +17,25 @@ describe("requestEmailCode", () => {
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toContain("/auth/login/totp/code/init/");
-    expect(JSON.parse(init.body as string)).toMatchObject({ email: "ana@filadd.com", locale: "es" });
+    expect(JSON.parse(init.body as string)).toMatchObject({ email: "ana@filadd.com", locale: "AR" });
+  });
+
+  it.each([
+    ["es-CL", "CL"],
+    ["es-CO", "CO"],
+    ["pt-BR", "BR"],
+    ["pt-PT", "BR"],
+    ["en-US", "AR"],
+    ["es", "AR"],
+  ])("maps the %s UI language to the %s locale", async (uiLanguage, locale) => {
+    vi.stubGlobal("chrome", { i18n: { getUILanguage: () => uiLanguage } });
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await requestEmailCode("ana@filadd.com");
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toMatchObject({ locale });
   });
 
   it("throws AuthLoginError carrying the status on failure", async () => {

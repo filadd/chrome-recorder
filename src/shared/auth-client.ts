@@ -23,12 +23,22 @@ export class AuthLoginError extends Error {
   }
 }
 
-// chrome.i18n gives a BCP-47 UI language (`es-419`, `pt-BR`, `en-US`); the auth service
-// expects a base language. Fall back to Spanish, the extension default.
-const resolveLocale = (): string => {
-  const base = chrome.i18n.getUILanguage().split("-")[0];
+// The auth service's `locale` is a country code that picks the email template, not a
+// language (it answers 422 to `es`). Countries with a TOTP template, per
+// TOTP_LOGIN_TEMPLATE_ID_BY_LOCALE in the auth service.
+const LOGIN_EMAIL_COUNTRIES = ["AR", "CL", "CO", "BR"];
 
-  return ["es", "en", "pt"].includes(base) ? base : "es";
+// chrome.i18n gives a BCP-47 UI language (`es-419`, `es-CL`, `pt-BR`, `en-US`). Use its
+// region when it names a supported country, send Portuguese to Brazil, and fall back to
+// Argentina, the service's own default.
+const resolveLocale = (): string => {
+  const [language, region = ""] = chrome.i18n.getUILanguage().toUpperCase().split("-");
+
+  if (LOGIN_EMAIL_COUNTRIES.includes(region)) {
+    return region;
+  }
+
+  return language === "PT" ? "BR" : "AR";
 };
 
 const post = (path: string, body: unknown): Promise<Response> =>
