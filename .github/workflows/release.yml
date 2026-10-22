@@ -16,6 +16,9 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      # @filadd/* installs from GitHub Packages; the job token reads them only with this
+      # and with the package granting this repo Actions access.
+      packages: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,6 +29,11 @@ jobs:
         with:
           node-version: 20
           cache: npm
+
+      - name: Setup .npmrc
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
 
       - run: npm ci
 
