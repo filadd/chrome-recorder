@@ -47,11 +47,17 @@
   "popup_status_needsPermission": {
     "message": "Falta permissão de microfone"
   },
-  "popup_userid_label": {
-    "message": "Seu identificador"
-  },
-  "popup_userid_placeholder": {
+  "login_email_placeholder": {
     "message": "ex: voce@email.com"
+  },
+  "settings_account_label": {
+    "message": "Conta"
+  },
+  "settings_log_out": {
+    "message": "Sair"
+  },
+  "settings_not_signed_in": {
+    "message": "Nenhuma sessão iniciada."
   },
   "popup_grant_mic": {
     "message": "Conceder microfone"
@@ -125,14 +131,52 @@
   "overlay_mic_muted": {
     "message": "mic mudo"
   },
-  "onboarding_welcome_title": {
-    "message": "Bem-vindo ao Filadd Recorder"
+  "login_email_title": {
+    "message": "Entre no Filadd Recorder"
   },
-  "onboarding_identifier_body": {
-    "message": "Seu identificador marca cada gravação. Configure uma vez — não será pedido novamente."
+  "login_email_body": {
+    "message": "Vamos enviar um código de 6 dígitos por e-mail."
   },
-  "onboarding_continue": {
-    "message": "Continuar →"
+  "login_send_code": {
+    "message": "Enviar código →"
+  },
+  "login_sending": {
+    "message": "Enviando…"
+  },
+  "login_code_title": {
+    "message": "Digite o código"
+  },
+  "login_code_body": {
+    "message": "Enviado para $EMAIL$.",
+    "placeholders": {
+      "email": {
+        "content": "$1"
+      }
+    }
+  },
+  "login_code_placeholder": {
+    "message": "000000"
+  },
+  "login_verify": {
+    "message": "Verificar →"
+  },
+  "login_verifying": {
+    "message": "Verificando…"
+  },
+  "login_resend": {
+    "message": "Reenviar código"
+  },
+  "login_change_email": {
+    "message": "‹ Usar outro e-mail"
+  },
+  "login_error_send": {
+    "message": "Não foi possível enviar o código. Tente de novo."
+  },
+  "login_error_code": {
+    "message": "O código está incorreto ou expirou."
+  },
+  "login_error_rate": {
+    "message": "Muitas tentativas. Aguarde um momento."
   },
   "onboarding_mic_title": {
     "message": "Permitir acesso ao microfone"

@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { PROFILES } from "../../profiles/profiles";
+import type { StoredSession } from "../../shared/auth-session";
 import { t } from "../../shared/i18n";
 import { extractNotionPageId } from "../../shared/notion";
 import { applyProfileToggle } from "../../shared/profile-toggle";
@@ -8,11 +9,13 @@ import type { Settings } from "../../shared/storage";
 
 interface Props {
   settings: Settings;
+  session: StoredSession | null;
   onUpdate: (patch: Partial<Settings>) => void;
+  onLogout: () => void;
   onClose: () => void;
 }
 
-export const SettingsOverlay = ({ settings, onUpdate, onClose }: Props) => {
+export const SettingsOverlay = ({ settings, session, onUpdate, onLogout, onClose }: Props) => {
   const [pitchLabel, setPitchLabel] = useState("");
   const [pitchUrl, setPitchUrl] = useState("");
 
@@ -49,14 +52,19 @@ export const SettingsOverlay = ({ settings, onUpdate, onClose }: Props) => {
 
       <div className="settings-body">
         <div className="field">
-          <label className="field-label">{t("popup_userid_label")}</label>
-          <input
-            className="overlay-input"
-            type="email"
-            placeholder={t("popup_userid_placeholder")}
-            value={settings.userId}
-            onChange={(event) => onUpdate({ userId: event.target.value.trim() })}
-          />
+          <label className="field-label">{t("settings_account_label")}</label>
+          {session != null ? (
+            <>
+              <span className="settings-email" title={session.email}>
+                {session.email}
+              </span>
+              <button className="overlay-secondary" onClick={onLogout}>
+                {t("settings_log_out")}
+              </button>
+            </>
+          ) : (
+            <p className="field-note">{t("settings_not_signed_in")}</p>
+          )}
         </div>
 
         <div className="field">

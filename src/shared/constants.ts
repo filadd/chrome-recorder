@@ -13,20 +13,27 @@ export const UPLOAD_BACKOFF_BASE_MS = 1_000;
 export const UPLOAD_BACKOFF_CAP_MS = 30_000;
 
 // The Filadd gateway origin the extension uploads through. Auth is the per-user
-// `auth._token.local` JWT read from the cookie at runtime (see src/shared/auth-token.ts),
-// not a static token. Configured via the root `.env` (VITE_API_BASE_URL); falls back to
-// the local gateway. The gateway validates the JWT, injects `X-UserId`, and proxies to
-// chrome-recorder-consumer-api.
+// access token from the extension's own email-code login (see src/shared/auth-session.ts),
+// stored in chrome.storage — not read from any filadd.com cookie. Configured via the
+// root `.env` (VITE_API_BASE_URL); falls back to the local gateway. The gateway validates
+// the JWT, injects `X-UserId`, and proxies to chrome-recorder-consumer-api.
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
 // Gateway route prefix for the consumer API. The gateway strips `/api` and matches
 // `/chrome-recorder/uploads…` → chrome-recorder-consumer-api's `/api/uploads…`.
 export const API_PATH_PREFIX = "/api/chrome-recorder";
 
-// Origin to read the `auth._token.local` cookie from. For local testing the token
-// is set on the local frontend (localhost), not on filadd.com — point this at it.
-// Set VITE_AUTH_COOKIE_URL="" to instead scan every host-permission origin.
-export const AUTH_COOKIE_URL = import.meta.env.VITE_AUTH_COOKIE_URL ?? "http://localhost:3000";
+// The Filadd auth service origin. The extension logs in and refreshes directly against
+// it (not through the gateway): `/auth/login/totp/code/{init,verify}/` and
+// `/auth/token/refresh/`. Configured via VITE_AUTH_BASE_URL; falls back to the local
+// auth service.
+export const AUTH_BASE_URL = import.meta.env.VITE_AUTH_BASE_URL ?? "http://auth-service.docker";
+
+// A `continue_url` is required by the auth login endpoints and validated against the
+// service's host allowlist (filadd.com family / localhost). This flow reads the tokens
+// from the response body, so the URL is never redirected to — it only has to be an
+// allowlisted host.
+export const AUTH_CONTINUE_URL = import.meta.env.VITE_AUTH_CONTINUE_URL ?? "http://localhost:3000";
 
 // How long to poll for the assembled upload to reach a terminal state after the
 // final part is submitted (file-uploads assembles + validates + moves on Celery).

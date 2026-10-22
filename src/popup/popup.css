@@ -284,6 +284,15 @@ button {
   color: #9a9a9a;
 }
 
+.settings-email {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .field-login {
   align-self: flex-start;
   padding: 5px 9px;

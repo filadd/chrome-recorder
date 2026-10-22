@@ -10,7 +10,6 @@ describe("normalizeSettings", () => {
   it("migrates legacy fields into meetingFields with a null slug", () => {
     const legacy = {
       profileId: "project",
-      userId: "ana@filadd.com",
       enabledProfileIds: ["project"],
       fields: { project: { pitchId: "667c67371f6544719c3c50258bdbfe65" } },
     } as unknown as Partial<Settings>;
@@ -25,7 +24,7 @@ describe("normalizeSettings", () => {
   });
 
   it("defaults enabledProfileIds to project when missing or empty", () => {
-    expect(normalizeSettings({ userId: "x@filadd.com" }).enabledProfileIds).toEqual(["project"]);
+    expect(normalizeSettings({}).enabledProfileIds).toEqual(["project"]);
     expect(normalizeSettings({ enabledProfileIds: [] }).enabledProfileIds).toEqual(["project"]);
   });
 
@@ -58,17 +57,24 @@ describe("normalizeSettings", () => {
   });
 
   it("defaults the pitch list", () => {
-    const settings = normalizeSettings({ userId: "x@filadd.com" });
+    const settings = normalizeSettings({});
 
     expect(settings.pitches).toEqual([]);
   });
 
   it("drops a lingering participants memory from stored settings", () => {
     const settings = normalizeSettings({
-      userId: "x@filadd.com",
       participantsByPitch: { abc: "Ana" },
     } as unknown as Partial<Settings>);
 
     expect("participantsByPitch" in settings).toBe(false);
+  });
+
+  it("drops the removed userId identifier from stored settings", () => {
+    const settings = normalizeSettings({
+      userId: "ana@filadd.com",
+    } as unknown as Partial<Settings>);
+
+    expect("userId" in settings).toBe(false);
   });
 });

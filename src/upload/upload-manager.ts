@@ -11,6 +11,10 @@ import type { CutPart } from "./part-buffer";
 
 interface UploadManagerCallbacks {
   onPartUploaded: (partNumber: number, etag: string) => void;
+  // Asks the SW to refresh the access token — the offscreen doc can't read storage or
+  // reach the auth service on its own. Returns the fresh `Bearer <JWT>`, or null when a
+  // refresh isn't possible (the recording then fails).
+  requestFreshToken: () => Promise<string | null>;
 }
 
 const TERMINAL_ERRORS = new Set<UploadStatus>([
@@ -37,10 +41,25 @@ export const createUploadManager = (
   session: UploadSession,
   token: string,
   firstPart: PartTarget,
-  { onPartUploaded }: UploadManagerCallbacks,
+  { onPartUploaded, requestFreshToken }: UploadManagerCallbacks,
 ) => {
   let next: PartTarget = firstPart;
   let lastUploaded: { partNumber: number; etag: string } | null = null;
+
+  // The access token can expire mid-recording. Hold it mutably: on an expired-token
+  // 401 the api-client calls onExpiredToken, and we update the held token so every
+  // later part uses the fresh one too (not just the retried call).
+  let currentToken = token;
+
+  const onExpiredToken = async (): Promise<string | null> => {
+    const fresh = await requestFreshToken();
+
+    if (fresh != null) {
+      currentToken = fresh;
+    }
+
+    return fresh;
+  };
 
   // Sequential chain: part N+1 waits for part N — both because a single in-flight
   // PUT avoids contending with the live call, and because each part's URL only
@@ -76,7 +95,11 @@ export const createUploadManager = (
         onPartUploaded(partNumber, etag);
         lastUploaded = { partNumber, etag };
 
-        const result = await recordPart({ key: session.key, partNumber, etag, complete }, token);
+        const result = await recordPart(
+          { key: session.key, partNumber, etag, complete },
+          currentToken,
+          onExpiredToken,
+        );
 
         if (!complete && result.url != null && result.partNumber != null) {
           next = { partNumber: result.partNumber, url: result.url };
@@ -107,7 +130,7 @@ export const createUploadManager = (
 
   const pollUntilTerminal = async (): Promise<UploadStatus> => {
     for (let attempt = 0; attempt < UPLOAD_POLL_MAX_ATTEMPTS; attempt += 1) {
-      const { status } = await getUploadStatus(session.key, token);
+      const { status } = await getUploadStatus(session.key, currentToken, onExpiredToken);
 
       if (status === UPLOAD_STATUS.completed) {
         return status;
@@ -140,7 +163,11 @@ export const createUploadManager = (
       } else if (lastUploaded != null) {
         // No buffered tail (recording ended on a part boundary): re-send the last
         // recorded part with complete:true (idempotent on a matching ETag).
-        await recordPart({ key: session.key, ...lastUploaded, complete: true }, token);
+        await recordPart(
+          { key: session.key, ...lastUploaded, complete: true },
+          currentToken,
+          onExpiredToken,
+        );
       } else {
         throw new Error("Nothing was uploaded");
       }

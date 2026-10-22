@@ -20,19 +20,19 @@ export default defineManifest({
     128: "icons/icon128.png",
   },
 
-  // `cookies` + the Filadd frontend origins below let the SW read the
-  // `auth._token.local` JWT (see src/shared/auth-token.ts). `*.amazonaws.com` is
-  // still needed for the presigned part PUTs that go directly to S3. `localhost`
-  // covers the local gateway and a local Filadd frontend (any port).
-  permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab", "cookies"],
+  // No `cookies` permission: the extension logs in with its own email code and stores
+  // its token in chrome.storage, so it never reads a filadd.com cookie. `*.amazonaws.com`
+  // is needed for the presigned part PUTs that go directly to S3. `localhost` covers the
+  // local gateway/auth (any port).
+  permissions: ["tabCapture", "offscreen", "storage", "tabs", "activeTab"],
   host_permissions: [
     "http://localhost/*",
-    // Local dockerfiles gateway is reached via its `.docker` VIRTUAL_HOST
-    // (e.g. http://gateway-service.docker) — needed so the SW's upload fetch isn't blocked.
+    // Local dockerfiles gateway + auth service are reached via their `.docker`
+    // VIRTUAL_HOST (gateway-service.docker, auth-service.docker) — needed so the fetch
+    // from the SW/popup isn't blocked.
     "http://*.docker/*",
-    // The token cookie is read only from filadd.com (VITE_AUTH_COOKIE_URL);
-    // `https://*.filadd.com` also covers the gateway.filadd.com upload fetch, and
-    // `http://*.filadd.com` covers a local dev frontend served over http.
+    // `https://*.filadd.com` covers both the gateway.filadd.com upload fetch and the
+    // auth.filadd.com login/refresh; `http://*.filadd.com` covers local http variants.
     "http://*.filadd.com/*",
     "https://*.filadd.com/*",
     "https://*.amazonaws.com/*",
